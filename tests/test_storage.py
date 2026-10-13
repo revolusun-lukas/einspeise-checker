@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.calculation.revenue import calculate_revenue
+from datetime import date
+
+from app.calculation.revenue import calculate_revenue, day_detail
 from app.calculation.storage import C_RATE, ETA_CHARGE, ETA_DISCHARGE, optimize_storage
 
 ETA = ETA_CHARGE * ETA_DISCHARGE
@@ -81,6 +83,11 @@ def test_storage_in_revenue_calculation():
     # Tageswerte summieren sich weiter zum Gesamterlös; Füllstand liegt im Detail vor.
     assert sum(d["revenues"]["DV mit"] for d in result["daily"]) == pytest.approx(mit["total_eur"], abs=0.01)
     assert detail.soc_kwh["DV ohne"] is None and detail.soc_kwh["DV mit"].max() <= 8.0 + 1e-6
+    # Tagesdetail: gemessener Überschuss bleibt, Netzeinspeisung je Tarif ist verschoben.
+    day = day_detail(detail, date(2026, 6, 1), ["DV mit", "DV ohne"])
+    assert [s["feed_in_kwh"] for s in day["slots"]] == [1.0, 1.0, 0.0, 0.0]
+    assert [s["grid_feed_in_kwh"]["DV ohne"] for s in day["slots"]] == [0.0, 1.0, 0.0, 0.0]
+    assert [s["grid_feed_in_kwh"]["DV mit"] for s in day["slots"]] == pytest.approx([0.0, 0.0, 1.0, 2 * ETA - 1], abs=1e-3)
 
 
 def test_eeg_storage_only_pays_off_with_negative_price_rule():

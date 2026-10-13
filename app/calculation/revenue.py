@@ -341,6 +341,7 @@ def day_detail(detail: CalculationDetail, day: date, names: list[str]) -> dict:
     slots = detail.local_index[mask]
     spot = detail.spot_ct_kwh.values[mask]
     measured = detail.measured_kwh.values[mask]
+    grid_feed_in = {n: detail.feed_in_kwh[n].values[mask] for n in names}
     curtail = {n: detail.curtail_kwh[n].values[mask] for n in names}
     soc = {n: None if detail.soc_kwh[n] is None else detail.soc_kwh[n].values[mask] for n in names}
     rates = {n: detail.rates_ct_kwh[n].values[mask] for n in names}
@@ -361,6 +362,8 @@ def day_detail(detail: CalculationDetail, day: date, names: list[str]) -> dict:
                 "time": ts.strftime("%H:%M"),
                 "utc_offset_hours": ts.utcoffset().total_seconds() / 3600,
                 "feed_in_kwh": round(float(measured[i]), 4),
+                # Tatsächliche Netzeinspeisung je Tarif (nach Abschalten und Speicher).
+                "grid_feed_in_kwh": {n: round(float(grid_feed_in[n][i]), 4) for n in names},
                 "curtailed": {n: bool(curtail[n][i] > 1e-9) for n in names},
                 "soc_kwh": {n: None if soc[n] is None else round(float(soc[n][i]), 3) for n in names},
                 "spot_ct_kwh": _round_or_none(spot[i], 3),

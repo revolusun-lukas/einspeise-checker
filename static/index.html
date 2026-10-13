@@ -280,7 +280,10 @@
       </div>
       <!-- Nur im Tagesverlauf und nur, wenn mindestens ein Tarif einen fiktiven Speicher hat. -->
       <div id="chart-soc-block" hidden>
-        <h4 class="pair-subhead">Speicherstand</h4>
+        <h4 class="pair-subhead">Speicherstand und Netzeinspeisung</h4>
+        <p class="hint">Linie: Speicherstand in % (linke Achse). Balken: gemessener PV-Überschuss (grau) und
+          tatsächliche Netzeinspeisung des Tarifs mit Speicher (farbig) in kWh (rechte Achse). Was grau, aber
+          nicht farbig ist, geht in den Speicher.</p>
         <div class="chart-legend" id="legend-soc"></div>
         <div class="chart-canvas-wrap fit-chart soc-chart"><canvas id="chart-soc"></canvas></div>
       </div>
