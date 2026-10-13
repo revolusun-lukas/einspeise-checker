@@ -193,7 +193,7 @@ function renderFeedInChart(canvasId, labels, values, yTitle, tooltipLabel) {
   });
 }
 
-/* Paarvergleich: Monatsbilanz + Tagesprofil (Ø je Viertelstunde über den gesamten Zeitraum). */
+/* Monatsbilanz des gewählten Tarifpaars. */
 
 function renderPairMonthsChart(months, pair) {
   const [a, b] = pair;
@@ -203,20 +203,6 @@ function renderPairMonthsChart(months, pair) {
     months.map((m) => formatMonthLabel(m.date)),
     months.map((m) => m.revenues[a.name] - m.revenues[b.name]),
     pair,
-  );
-}
-
-// slots: Antwort von /api/pair-analysis (96 Einträge).
-function renderPairProfileCharts(slots, pair) {
-  const labels = slots.map((s) => s.time);
-  const rates = Object.fromEntries(pair.map((p) => [p.name, slots.map((s) => s.avg_rate_ct_kwh[p.name])]));
-  renderRateLinesChart('chart-pair-prices', 'legend-pair-prices', labels, rates, pair, 'Ø ct/kWh');
-  renderFeedInChart(
-    'chart-pair-feed-in',
-    labels,
-    slots.map((s) => s.avg_feed_in_kwh),
-    'Ø kWh pro Tag',
-    (i, v) => `Ø ${formatDe(v, 3)} kWh pro Tag · ${formatDe(slots[i].feed_in_share * 100, 1)} % der Einspeisung`,
   );
 }
 
@@ -254,10 +240,19 @@ function formatDayLabel(dateStr) {
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
 }
 
-/* items: [{date, revenues: {tarifname: betrag}}]. granularity steuert Label-Format, Balkenbreite und
-   Achsentitel. Erzeugt bei jedem Aufruf einen komplett neuen Chart (destroy + recreate), damit
-   Breite/Höhe immer zur aktuellen Datenmenge passen. */
-function renderDailyChart(items, tariffNames, granularity) {
+/* items: [{date, revenues: {tarifname: betrag}}] für 'month'/'day', [{label, feed_in_kwh, revenues}] für
+   den Tagesverlauf ('quarter'/'hour'). granularity steuert Label-Format, Balkenbreite und Achsentitel.
+   onBarClick(index) macht die Balken anklickbar (Drill-down Monat -> Tag -> Tagesverlauf).
+   Erzeugt bei jedem Aufruf einen komplett neuen Chart (destroy + recreate), damit Breite/Höhe immer
+   zur aktuellen Datenmenge passen. */
+const DAILY_CHART_GRANULARITY = {
+  month: { axisTitle: '€ / Monat', perCategory: (n) => Math.max(70, n * 26), maxBar: 32 },
+  day: { axisTitle: '€ / Tag', perCategory: (n) => Math.max(18, n * 8), maxBar: 16 },
+  hour: { axisTitle: '€ / Stunde', perCategory: (n) => Math.max(30, n * 10), maxBar: 16 },
+  quarter: { axisTitle: '€ / Viertelstunde', perCategory: (n) => Math.max(10, n * 5), maxBar: 8 },
+};
+
+function renderDailyChart(items, tariffNames, granularity, onBarClick = null) {
   renderLegend('legend-daily', tariffNames);
 
   if (dailyChartInstance) {
@@ -265,14 +260,16 @@ function renderDailyChart(items, tariffNames, granularity) {
     dailyChartInstance = null;
   }
 
-  const isDay = granularity === 'day';
-  const labelFormatter = isDay ? formatDayLabel : formatMonthLabel;
-  const axisTitle = isDay ? '€ / Tag' : '€ / Monat';
-  const perCategoryWidth = isDay ? Math.max(18, tariffNames.length * 8) : Math.max(70, tariffNames.length * 26);
+  const cfg = DAILY_CHART_GRANULARITY[granularity];
+  const isCurve = granularity === 'quarter' || granularity === 'hour';
+  const labels = items.map((it) => {
+    if (isCurve) return it.label;
+    return granularity === 'day' ? formatDayLabel(it.date) : formatMonthLabel(it.date);
+  });
 
   // Größe auf dem Wrapper-Div, Chart.js per responsive:true/maintainAspectRatio:false darauf
   // angesetzt -- so bleibt der Graph inkl. devicePixelRatio scharf.
-  const width = Math.max(480, items.length * perCategoryWidth);
+  const width = Math.max(480, items.length * cfg.perCategory(tariffNames.length));
   const wrap = document.getElementById('chart-daily-wrap');
   wrap.style.width = width + 'px';
   wrap.style.height = CHART_HEIGHT_PX + 'px';
@@ -283,31 +280,47 @@ function renderDailyChart(items, tariffNames, granularity) {
     label: name,
     data: items.map((it) => it.revenues[name]),
     backgroundColor: seriesColor(i),
-    borderRadius: 4,
-    maxBarThickness: isDay ? 16 : 32,
+    borderRadius: isCurve ? 2 : 4,
+    maxBarThickness: cfg.maxBar,
     categoryPercentage: 0.8,
     barPercentage: 0.9,
   }));
 
+  let xScale = { ...commonScaleOptions(), ticks: { ...commonScaleOptions().ticks, maxTicksLimit: granularity === 'day' ? 20 : undefined } };
+  if (granularity === 'quarter') xScale = quarterHourScale();
+
   dailyChartInstance = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels: items.map((it) => labelFormatter(it.date)),
-      datasets,
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      onClick: onBarClick
+        ? (event, elements) => { if (elements.length) onBarClick(elements[0].index); }
+        : undefined,
+      onHover: (event, elements) => {
+        event.native.target.style.cursor = onBarClick && elements.length ? 'pointer' : 'default';
+      },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${formatEurShort(c.parsed.y)}` } },
+        tooltip: {
+          callbacks: {
+            label: (c) => `${c.dataset.label}: ${formatEurShort(c.parsed.y)}`,
+            footer: (ctxs) => {
+              if (!ctxs.length) return '';
+              const item = items[ctxs[0].dataIndex];
+              if (isCurve) return `Einspeisung: ${formatDe(item.feed_in_kwh, 3)} kWh`;
+              return onBarClick ? 'Klicken für Details' : '';
+            },
+          },
+        },
       },
       scales: {
-        x: { ...commonScaleOptions(), ticks: { ...commonScaleOptions().ticks, maxTicksLimit: isDay ? 20 : undefined } },
+        x: xScale,
         y: {
           ...commonScaleOptions(),
           beginAtZero: true,
-          title: { display: true, text: axisTitle, color: cssVar('--text-secondary') },
+          title: { display: true, text: cfg.axisTitle, color: cssVar('--text-secondary') },
         },
       },
     },

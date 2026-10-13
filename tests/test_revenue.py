@@ -12,9 +12,10 @@ def eeg(name="EEG", satz=8.0, negativ=False):
     return SimpleNamespace(type="eeg", name=name, verguetung_ct_kwh=satz, keine_verguetung_bei_negativen_preisen=negativ)
 
 
-def dv(name="DV", abschlag=0.5, grund=0.0, einmal=0.0):
+def dv(name="DV", abschlag=0.5, grund=0.0, einmal=0.0, abschalten=False):
     return SimpleNamespace(
-        type="direktvermarktung", name=name, abschlag_ct_kwh=abschlag, grundgebuehr_eur_monat=grund, einmalkosten_eur=einmal
+        type="direktvermarktung", name=name, abschlag_ct_kwh=abschlag, grundgebuehr_eur_monat=grund,
+        einmalkosten_eur=einmal, abschalten_bei_negativer_verguetung=abschalten,
     )
 
 
@@ -53,6 +54,49 @@ def test_direct_marketing_negative_prices_cost_money():
     # (10 - 1) ct + (-5 - 1) ct = 3 ct -- kein Abschalten in Schritt 1.
     assert dv_total["energy_revenue_eur"] == pytest.approx(0.03)
     assert detail.revenue_eur["DV"].iloc[1] == pytest.approx(-0.06)
+
+
+def test_direct_marketing_curtailment_at_negative_rate():
+    idx = pd.date_range("2026-06-01 10:00", periods=4, freq="15min", tz="UTC")
+    kwh = pd.Series([1.0, 2.0, 1.0, 1.0], index=idx)
+    # 10 ct, -5 ct, 0 ct und 2 ct: Bei 1 ct Abschlag ist die Vergütung auch bei 0 ct negativ.
+    prices = pd.Series([100.0, -50.0, 0.0, 20.0], index=idx)
+    result, detail = calculate_revenue(
+        kwh, prices, [dv("DV aus", abschlag=1.0, grund=3.0, abschalten=True), dv(abschlag=1.0, grund=3.0)]
+    )
+
+    off, on = result["tariffs"]
+    assert off["feed_in_kwh"] == 2.0
+    assert off["curtailed_kwh"] == 3.0
+    # (10 - 1) + (2 - 1) ct; ohne Abschalten zusätzlich 2 × (-5 - 1) + (0 - 1) ct.
+    assert off["energy_revenue_eur"] == pytest.approx(0.10)
+    assert on["energy_revenue_eur"] == pytest.approx(0.10 - 0.13)
+    assert off["avoided_negative_eur"] == pytest.approx(0.13)
+    assert on["curtailed_kwh"] == 0.0
+    # Abgeschaltet: weder negative Vergütung noch Erlös, auch nicht inkl. Gebühren-Anteil.
+    curtailed = detail.feed_in_kwh["DV aus"] < detail.measured_kwh
+    assert (detail.rates_ct_kwh["DV aus"][curtailed] == 0).all()
+    assert (detail.net_rates_ct_kwh["DV aus"][curtailed] == 0).all()
+    assert (detail.revenue_eur["DV aus"][curtailed] == 0).all()
+    # Gemessene Einspeisung bleibt für Tageswerte und Tagesdetail unverändert.
+    assert result["total_kwh"] == 5.0
+    day = day_detail(detail, date(2026, 6, 1), ["DV aus", "DV"])
+    assert day["feed_in_kwh"] == pytest.approx(5.0)
+    assert day["curtailed_kwh"] == {"DV aus": 3.0, "DV": 0.0}
+    assert [s["curtailed"]["DV aus"] for s in day["slots"] if s["feed_in_kwh"] > 0] == [False, True, True, False]
+    assert all(s["revenue_eur"]["DV aus"] >= 0 for s in day["slots"] if s["curtailed"]["DV aus"])
+
+
+def test_curtailed_slots_carry_no_base_fee():
+    idx = june_local()
+    local = idx.tz_convert("Europe/Berlin")
+    kwh = pd.Series(np.where(local.hour == 12, 1.0, 0.0), index=idx)
+    prices = pd.Series(np.where(local.minute == 0, -10.0, 50.0), index=idx)
+    result, detail = calculate_revenue(kwh, prices, [dv(abschalten=True, grund=6.0), eeg()])
+
+    assert result["tariffs"][0]["base_fee_eur"] == pytest.approx(6.0)
+    curtailed = detail.feed_in_kwh["DV"] == 0
+    assert detail.revenue_eur["DV"][curtailed].abs().sum() == pytest.approx(0.0)
 
 
 def test_direct_marketing_monthly_fee_and_one_off_costs():
@@ -109,8 +153,6 @@ def test_pair_analysis_and_day_detail():
     _, detail = calculate_revenue(kwh, prices, [eeg(), dv(abschlag=0.0)])
 
     analysis = pair_analysis(detail, ["EEG", "DV"])
-    assert len(analysis["slots"]) == 96
-    assert analysis["slots"][48]["time"] == "12:00"
     assert analysis["profile"]["EEG"]["profile_factor_ct_kwh"] == 0.0
     assert analysis["profile"]["DV"]["profile_factor_ct_kwh"] < 0
 

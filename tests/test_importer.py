@@ -6,6 +6,7 @@ import pytest
 from app.importer import aggregation, parsing
 
 FIXTURES = Path(__file__).parent / "fixtures"
+SAMPLE_DIR = Path(__file__).parent.parent / "static" / "sample"
 
 
 def _ts(text: str) -> pd.Timestamp:
@@ -27,6 +28,24 @@ def test_shelly_em_suggestions():
     assert parsing.suggest_value_type(value_col, df[value_col], meta["decimal"]) == "energy_wh"
     assert parsing.suggest_grid_column(df, exclude=[ts_col, value_col]) == "Active energy Wh"
     assert parsing.suggest_timezone(ts_col) == "UTC"
+
+
+def test_sample_data_suggestions_and_total():
+    """Die mitgelieferten Beispieldaten müssen ohne Korrektur der Vorschläge durchlaufen."""
+    df, meta = parsing.read_csv_raw((SAMPLE_DIR / "beispiel-einspeisung-2025.csv").read_bytes())
+    ts_col, _ = parsing.suggest_timestamp_column(df)
+    value_col, direction = parsing.suggest_feed_in_column(df, exclude=ts_col, decimal=meta["decimal"])
+    value_type = parsing.suggest_value_type(value_col, df[value_col], meta["decimal"])
+
+    assert (ts_col, value_col, direction, value_type) == ("Zeitstempel", "Netzeinspeisung [W]", "feed_in", "power_w")
+    # "Direktverbrauch" ist Eigenverbrauch, kein Netzbezug.
+    assert parsing.suggest_grid_column(df, exclude=[ts_col, value_col]) is None
+    assert parsing.suggest_timezone(ts_col) == "Europe/Berlin"
+
+    result = aggregation.build_quarter_hour_series(
+        df, ts_col, value_col, value_type, direction, "Europe/Berlin", meta["decimal"]
+    )
+    assert result.feed_in_kwh.sum() == pytest.approx(5305.4, abs=0.1)
 
 
 def test_shelly_em_feed_in_and_grid_per_quarter_hour():

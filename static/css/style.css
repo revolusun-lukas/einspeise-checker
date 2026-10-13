@@ -127,6 +127,13 @@ body {
   flex-wrap: wrap;
 }
 
+/* Alternative zum eigenen Upload, optisch vom Upload abgesetzt. */
+.sample-box {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 .btn {
   border: none;
   border-radius: 999px;
@@ -678,6 +685,7 @@ select:focus, input[type="number"]:focus, .scenario-location-search input:focus 
 
 .positive { color: var(--good); }
 .negative { color: var(--critical); }
+.detail-table td.curtailed { color: var(--text-muted); font-style: italic; }
 
 .result-block {
   margin: 28px 0;
@@ -686,29 +694,6 @@ select:focus, input[type="number"]:focus, .scenario-location-search input:focus 
 .pair-subhead {
   margin: 22px 0 2px;
   font-size: 0.95rem;
-}
-
-/* Rahmen um die Durchschnittstag-Charts, damit sie optisch nicht mit Einzeltagen verwechselt werden. */
-.avg-profile {
-  margin-top: 22px;
-  padding: 4px 16px 16px;
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-}
-
-.avg-profile-badge {
-  display: inline-block;
-  margin: 12px 0 0;
-  padding: 2px 10px;
-  border-radius: 999px;
-  background: var(--page-plane);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.avg-profile-badge span {
-  font-weight: 400;
-  color: var(--text-secondary);
 }
 
 /* Paar-/Tagescharts haben höchstens 24 bzw. 13 Kategorien und liegen nicht in einem
@@ -840,6 +825,28 @@ select:focus, input[type="number"]:focus, .scenario-location-search input:focus 
 
 .month-tabs[hidden] {
   display: none;
+}
+
+/* Tagesverlauf im Erlös-Chart: Tag blättern, zurück zum Monat, Auflösung 15 Min/Stunde. */
+.chart-day-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.chart-day-nav[hidden] {
+  display: none;
+}
+
+.chart-day-nav .granularity-toggle {
+  margin-left: auto;
+}
+
+.month-tab-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .month-tab-btn {

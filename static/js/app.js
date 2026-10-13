@@ -5,6 +5,7 @@ const state = {
   sessionId: null,
   comparePair: [], // die zwei im Ergebnis angeklickten Tarifnamen für Paar- und Tagesvergleich
   compareDays: { a: null, b: null }, // Datum des besten Tages je Tarif des Paars
+  sampleData: false, // true = mitgelieferte Beispieldaten statt eigenem Upload
 };
 
 const el = (id) => document.getElementById(id);
@@ -106,6 +107,14 @@ function postJson(url, payload) {
 
 /* ---------- Schritt 1: Upload ---------- */
 
+async function uploadCsv(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const data = await apiRequest('/api/import/upload', { method: 'POST', body: formData });
+  state.sessionId = data.session_id;
+  populateMappingStep(data);
+}
+
 el('btn-upload').addEventListener('click', async () => {
   clearError();
   const fileInput = el('csv-file');
@@ -113,16 +122,36 @@ el('btn-upload').addEventListener('click', async () => {
     showError('Bitte zuerst eine CSV-Datei auswählen.');
     return;
   }
-  const formData = new FormData();
-  formData.append('file', fileInput.files[0]);
 
   const btn = el('btn-upload');
   setButtonLoading(btn, true, 'Wird hochgeladen und analysiert…');
   try {
-    const data = await apiRequest('/api/import/upload', { method: 'POST', body: formData });
-    state.sessionId = data.session_id;
-    populateMappingStep(data);
+    state.sampleData = false;
+    await uploadCsv(fileInput.files[0]);
     showStep('modal-mapping');
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    setButtonLoading(btn, false);
+  }
+});
+
+// Beispieldaten laufen durch denselben Import wie ein eigener Upload. Die automatischen Vorschläge
+// passen für diese Datei (siehe tests/test_importer.py), daher geht es direkt weiter zu den Tarifen;
+// über "Zurück" ist die Spaltenzuordnung trotzdem einsehbar.
+const SAMPLE_CSV_URL = '/static/sample/beispiel-einspeisung-2025.csv';
+
+el('btn-sample-data').addEventListener('click', async () => {
+  clearError();
+  const btn = el('btn-sample-data');
+  setButtonLoading(btn, true, 'Beispieldaten werden geladen…');
+  try {
+    const response = await fetch(SAMPLE_CSV_URL);
+    if (!response.ok) throw new Error('Die Beispieldaten konnten nicht geladen werden.');
+    const file = new File([await response.blob()], 'beispiel-einspeisung-2025.csv', { type: 'text/csv' });
+    state.sampleData = true;
+    await uploadCsv(file);
+    await confirmMapping();
   } catch (err) {
     showError(err.message);
   } finally {
@@ -187,8 +216,7 @@ function renderPreviewTable(columns, rows) {
   table.innerHTML = thead + tbody;
 }
 
-el('btn-confirm-mapping').addEventListener('click', async () => {
-  clearError();
+async function confirmMapping() {
   const payload = {
     session_id: state.sessionId,
     timestamp_column: el('select-timestamp-col').value,
@@ -199,12 +227,17 @@ el('btn-confirm-mapping').addEventListener('click', async () => {
     timezone: el('select-timezone').value,
   };
 
+  const data = await postJson('/api/import/confirm', payload);
+  showImportSummary(data);
+  showStep('modal-tariffs');
+}
+
+el('btn-confirm-mapping').addEventListener('click', async () => {
+  clearError();
   const btn = el('btn-confirm-mapping');
   setButtonLoading(btn, true, 'Viertelstundenwerte werden berechnet…');
   try {
-    const data = await postJson('/api/import/confirm', payload);
-    showImportSummary(data);
-    showStep('modal-tariffs');
+    await confirmMapping();
   } catch (err) {
     showError(err.message);
   } finally {
@@ -216,7 +249,10 @@ function showImportSummary(data) {
   el('summary-total-kwh').textContent = `${formatNum(data.total_feed_in_kwh, 1)} kWh`;
   const grid = data.total_grid_kwh == null ? '' : ` · Netzbezug ${formatNum(data.total_grid_kwh, 1)} kWh`;
   el('summary-meta').textContent =
+    (state.sampleData ? 'Beispieldaten · ' : '') +
     `Zeitraum ${formatDateTime(data.start_date)} – ${formatDateTime(data.end_date)} (${formatNum(data.slots_count, 0)} Viertelstunden)${grid}`;
+  // Der Abgleich mit Zähler/Abrechnung ist nur bei eigenen Daten sinnvoll.
+  el('summary-check-hint').hidden = state.sampleData;
 
   const warningsBox = el('summary-warnings');
   warningsBox.innerHTML = data.warnings && data.warnings.length
@@ -244,7 +280,7 @@ const TYPE_LABELS = { eeg: 'EEG', direktvermarktung: 'Direktvermarktung' };
 let tariffs = [
   { uid: 1, type: 'eeg', name: 'EEG-Vergütung', autoName: true, verguetung_ct_kwh: 7.86, keine_verguetung_bei_negativen_preisen: true },
   { uid: 2, type: 'direktvermarktung', name: 'Direktvermarktung', autoName: true,
-    abschlag_ct_kwh: 0.5, grundgebuehr_eur_monat: 5, einmalkosten_eur: 100 },
+    abschlag_ct_kwh: 0.5, grundgebuehr_eur_monat: 5, einmalkosten_eur: 100, abschalten_bei_negativer_verguetung: false },
 ];
 let tariffUidCounter = Math.max(...tariffs.map((t) => t.uid));
 
@@ -366,8 +402,16 @@ function dvFieldsHtml(t) {
       <span class="field-hint">Z.B. Smart Meter / Steuerbox. Wird wie im Tarifcheck aufs erste Jahr verteilt
         (1/12 je Monat); bei kürzerem Zeitraum anteilig.</span>
     </label>
+    <label class="tariff-check">
+      <span class="tariff-inline-check">
+        <input type="checkbox" id="tariff-${t.uid}-abschalten" ${t.abschalten_bei_negativer_verguetung ? 'checked' : ''}>
+        <span>Abschalten bei negativer Vergütung</span>
+      </span>
+      <span class="field-hint">Nicht einspeisen, sobald Börsenpreis − Abschlag unter 0 liegt (also auch bei
+        Börsenpreisen knapp über 0) – dann gibt es weder Erlös noch Kosten.</span>
+    </label>
     <p class="tariff-preview">Erlös je Viertelstunde = Einspeisung × (Börsenpreis − Abschlag).
-      Negative Börsenpreise kosten Geld – Abschalten wird (noch) nicht simuliert.</p>`;
+      Ohne Abschalten kostet Einspeisung Geld, wenn der Börsenpreis unter dem Abschlag liegt.</p>`;
 }
 
 function tariffRowHtml(t) {
@@ -402,6 +446,7 @@ function syncTariffFromDom(t) {
   t.abschlag_ct_kwh = el(`tariff-${t.uid}-abschlag`).value;
   t.grundgebuehr_eur_monat = readGrundgebuehr(t);
   t.einmalkosten_eur = el(`tariff-${t.uid}-einmalkosten`).value;
+  t.abschalten_bei_negativer_verguetung = el(`tariff-${t.uid}-abschalten`).checked;
 }
 
 function syncTariffsFromDom() {
@@ -423,6 +468,7 @@ function ensureDefaults(t) {
     t.grundgebuehrJaehrlich = template ? Boolean(template.grundgebuehrJaehrlich) : false;
   }
   t.einmalkosten_eur ??= template ? template.einmalkosten_eur : 100;
+  t.abschalten_bei_negativer_verguetung ??= template ? Boolean(template.abschalten_bei_negativer_verguetung) : false;
 }
 
 function renderTariffList() {
@@ -499,6 +545,7 @@ function tariffPayload(t) {
     abschlag_ct_kwh: emptyAsZero(t.abschlag_ct_kwh),
     grundgebuehr_eur_monat: emptyAsZero(t.grundgebuehr_eur_monat),
     einmalkosten_eur: emptyAsZero(t.einmalkosten_eur),
+    abschalten_bei_negativer_verguetung: Boolean(t.abschalten_bei_negativer_verguetung),
   };
 }
 
@@ -569,8 +616,12 @@ let resultTariffNames = [];
 let resultTariffTypes = {}; // Name -> 'eeg' | 'direktvermarktung'
 let resultTariffs = [];
 let resultTotalKwh = 0;
-let chartGranularity = 'month';
-let selectedMonthKey = null; // nur relevant, wenn chartGranularity === 'day'
+let chartGranularity = 'month'; // 'month' | 'day' | 'slot' (Tagesverlauf)
+let selectedMonthKey = null; // relevant für 'day'
+let selectedDayKey = null; // relevant für 'slot'
+let chartResolution = 'quarter'; // 'quarter' | 'hour', nur für 'slot'
+let dayCurveCache = new Map(); // Datum -> Antwort von /api/day-detail für alle Tarife
+let dayCurveRequestId = 0;
 
 function getAvailableMonths(daily) {
   return Array.from(new Set(daily.map((d) => d.date.slice(0, 7)))).sort();
@@ -590,27 +641,141 @@ function renderMonthTabs(months, selected) {
   });
 }
 
+function setChartGranularity(granularity) {
+  chartGranularity = granularity;
+  document.querySelectorAll('#chart-granularity-toggle .granularity-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.granularity === granularity);
+  });
+  renderDailyChartForGranularity();
+}
+
 function renderDailyChartForGranularity() {
-  const tabsContainer = el('chart-month-tabs');
-  if (chartGranularity === 'day') {
-    const months = getAvailableMonths(resultDailyRaw);
-    if (!selectedMonthKey || !months.includes(selectedMonthKey)) selectedMonthKey = months[0];
+  const months = getAvailableMonths(resultDailyRaw);
+  if (!selectedMonthKey || !months.includes(selectedMonthKey)) selectedMonthKey = months[0];
+  if (!selectedDayKey || !resultDailyRaw.some((d) => d.date === selectedDayKey)) {
+    selectedDayKey = resultDailyRaw.find((d) => d.date.slice(0, 7) === selectedMonthKey).date;
+  }
+  el('chart-month-tabs').hidden = chartGranularity !== 'day';
+  el('chart-day-nav').hidden = chartGranularity !== 'slot';
+  el('chart-day-summary').hidden = chartGranularity !== 'slot';
+  el('chart-drill-hint').hidden = chartGranularity === 'slot';
+
+  if (chartGranularity === 'month') {
+    // Klick auf einen Monat -> Tage dieses Monats.
+    const items = aggregateByMonth(resultDailyRaw, resultTariffNames);
+    renderDailyChart(items, resultTariffNames, 'month', (i) => {
+      selectedMonthKey = items[i].date;
+      setChartGranularity('day');
+    });
+  } else if (chartGranularity === 'day') {
+    // Klick auf einen Tag -> Tagesverlauf dieses Tages.
     renderMonthTabs(months, selectedMonthKey);
-    tabsContainer.hidden = false;
-    renderDailyChart(resultDailyRaw.filter((d) => d.date.slice(0, 7) === selectedMonthKey), resultTariffNames, 'day');
+    const items = resultDailyRaw.filter((d) => d.date.slice(0, 7) === selectedMonthKey);
+    renderDailyChart(items, resultTariffNames, 'day', (i) => {
+      selectedDayKey = items[i].date;
+      setChartGranularity('slot');
+    });
   } else {
-    tabsContainer.hidden = true;
-    renderDailyChart(aggregateByMonth(resultDailyRaw, resultTariffNames), resultTariffNames, 'month');
+    renderDayCurve();
   }
 }
+
+// Viertelstunden zu Stunden zusammenfassen. Bei der Zeitumstellung gibt es eine Stunde doppelt --
+// sie wird über den UTC-Offset getrennt und mit MESZ/MEZ beschriftet.
+function dayCurveItems(detail) {
+  const slots = detail.slots.map((s) => ({ ...s, key: `${s.time}|${s.utc_offset_hours}` }));
+  if (chartResolution === 'quarter') {
+    const counts = slots.reduce((acc, s) => ({ ...acc, [s.time]: (acc[s.time] || 0) + 1 }), {});
+    return slots.map((s) => ({
+      label: counts[s.time] > 1 ? `${s.time} ${s.utc_offset_hours === 2 ? 'MESZ' : 'MEZ'}` : s.time,
+      feed_in_kwh: s.feed_in_kwh,
+      revenues: s.revenue_eur,
+    }));
+  }
+  const hours = new Map();
+  slots.forEach((s) => {
+    const key = `${s.time.slice(0, 2)}|${s.utc_offset_hours}`;
+    if (!hours.has(key)) {
+      hours.set(key, { hour: s.time.slice(0, 2), offset: s.utc_offset_hours, feed_in_kwh: 0, revenues: Object.fromEntries(resultTariffNames.map((n) => [n, 0])) });
+    }
+    const h = hours.get(key);
+    h.feed_in_kwh += s.feed_in_kwh;
+    resultTariffNames.forEach((n) => { h.revenues[n] += s.revenue_eur[n]; });
+  });
+  const list = Array.from(hours.values());
+  const counts = list.reduce((acc, h) => ({ ...acc, [h.hour]: (acc[h.hour] || 0) + 1 }), {});
+  return list.map((h) => ({
+    label: `${h.hour}:00${counts[h.hour] > 1 ? ` ${h.offset === 2 ? 'MESZ' : 'MEZ'}` : ''}`,
+    feed_in_kwh: h.feed_in_kwh,
+    revenues: h.revenues,
+  }));
+}
+
+async function renderDayCurve() {
+  const day = selectedDayKey;
+  const days = resultDailyRaw.map((d) => d.date);
+  const index = days.indexOf(day);
+  el('chart-day-label').textContent = new Date(day + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+  el('btn-chart-day-prev').disabled = index <= 0;
+  el('btn-chart-day-next').disabled = index >= days.length - 1;
+
+  const requestId = ++dayCurveRequestId;
+  let detail = dayCurveCache.get(day);
+  if (!detail) {
+    el('chart-day-summary').textContent = 'Lade Viertelstundenwerte …';
+    try {
+      detail = await postJson('/api/day-detail', { session_id: state.sessionId, date: day, tariff_names: resultTariffNames });
+    } catch (err) {
+      if (requestId === dayCurveRequestId) showError(err.message);
+      return;
+    }
+    dayCurveCache.set(day, detail);
+  }
+  // Bei schnellem Blättern nur den zuletzt gewählten Tag zeichnen.
+  if (requestId !== dayCurveRequestId || chartGranularity !== 'slot') return;
+
+  el('chart-day-summary').innerHTML =
+    `Einspeisung an diesem Tag: <strong>${formatNum(detail.feed_in_kwh, 2)} kWh</strong> · ` +
+    resultTariffNames.map((n) => `${escapeHtml(n)}: <strong>${formatEur(detail.totals_eur[n])}</strong>`).join(' · ') +
+    ' (inkl. Gebühren-Anteil)';
+  renderDailyChart(dayCurveItems(detail), resultTariffNames, chartResolution);
+}
+
+function shiftChartDay(step) {
+  const days = resultDailyRaw.map((d) => d.date);
+  const next = days[days.indexOf(selectedDayKey) + step];
+  if (!next) return;
+  selectedDayKey = next;
+  selectedMonthKey = next.slice(0, 7);
+  renderDayCurve();
+}
+
+el('btn-chart-day-prev').addEventListener('click', () => shiftChartDay(-1));
+el('btn-chart-day-next').addEventListener('click', () => shiftChartDay(1));
+el('btn-chart-day-month').addEventListener('click', () => {
+  selectedMonthKey = selectedDayKey.slice(0, 7);
+  setChartGranularity('day');
+});
+
+document.querySelectorAll('#chart-resolution-toggle .granularity-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (btn.classList.contains('active')) return;
+    document.querySelectorAll('#chart-resolution-toggle .granularity-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    chartResolution = btn.dataset.resolution;
+    renderDayCurve();
+  });
+});
 
 document.querySelectorAll('#chart-granularity-toggle .granularity-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     if (btn.classList.contains('active')) return;
-    document.querySelectorAll('#chart-granularity-toggle .granularity-btn').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    chartGranularity = btn.dataset.granularity;
-    renderDailyChartForGranularity();
+    // Direkt auf "Tag" bzw. "Tagesverlauf": Monat/Tag der aktuellen Auswahl beibehalten.
+    if (btn.dataset.granularity === 'day' && chartGranularity === 'slot') selectedMonthKey = selectedDayKey.slice(0, 7);
+    if (btn.dataset.granularity === 'slot' && selectedDayKey?.slice(0, 7) !== selectedMonthKey) {
+      selectedDayKey = resultDailyRaw.find((d) => d.date.slice(0, 7) === selectedMonthKey).date;
+    }
+    setChartGranularity(btn.dataset.granularity);
   });
 });
 
@@ -620,9 +785,11 @@ function tariffBreakdownHtml(t) {
       ? `<br>entfallen bei negativen Preisen: ${formatEur(t.lost_negative_eur)}` : '';
     return `Ø ${formatCt(t.avg_ct_kwh)}${lost}`;
   }
+  const curtailed = t.curtailed_kwh > 0
+    ? `<br>abgeschaltet: ${formatNum(t.curtailed_kwh, 1)} kWh, ${formatEur(t.avoided_negative_eur)} Kosten vermieden` : '';
   return `Ø ${formatCt(t.avg_ct_kwh)} nach Gebühren<br>` +
     `Börse ${formatEur(t.energy_revenue_eur)} − Grundgebühr ${formatEur(t.base_fee_eur)}` +
-    (t.setup_eur > 0 ? ` − Einmalkosten ${formatEur(t.setup_eur)}` : '');
+    (t.setup_eur > 0 ? ` − Einmalkosten ${formatEur(t.setup_eur)}` : '') + curtailed;
 }
 
 function renderResults(data) {
@@ -662,6 +829,7 @@ function renderResults(data) {
   renderNegativePriceNote(data.negative_prices);
 
   resultDailyRaw = data.daily;
+  dayCurveCache = new Map(); // Tagesverläufe gehören zur vorherigen Berechnung
   resultTariffNames = names;
   resultTariffTypes = Object.fromEntries(data.tariffs.map((t) => [t.name, t.type]));
   resultTariffs = data.tariffs;
@@ -689,7 +857,8 @@ function renderNegativePriceNote(neg) {
     `<strong>Negative Börsenpreise:</strong> ${formatNum(neg.slots, 0)} Viertelstunden im Zeitraum, in ` +
     `${formatNum(neg.slots_with_feed_in, 0)} davon hast du eingespeist – insgesamt ${formatNum(neg.feed_in_kwh, 1)} kWh ` +
     `(${formatNum(neg.share_percent, 1)} % deiner Einspeisung). In der Direktvermarktung hat diese Menge zum Börsenpreis ` +
-    `${formatEur(neg.spot_value_eur)} gekostet (zzgl. Abschlag). Mit EEG-Regel für neuere Anlagen gibt es dafür keine Vergütung.`;
+    `${formatEur(neg.spot_value_eur)} gekostet (zzgl. Abschlag), außer bei Tarifen mit Abschalten. ` +
+    'Mit EEG-Regel für neuere Anlagen gibt es dafür keine Vergütung.';
 }
 
 function aggregateByMonth(daily, names) {
@@ -782,11 +951,6 @@ function winsText(wins, a, b, unit) {
 
 let pairAnalysisRequestId = 0;
 
-// Vergütungsverläufe sind nur mit Direktvermarktung aussagekräftig -- EEG ist eine flache Linie.
-function pairHasMarket(names) {
-  return names.some((n) => resultTariffTypes[n] === 'direktvermarktung');
-}
-
 function chartPair(names) {
   return names.map((name) => ({ name, colorIndex: resultTariffNames.indexOf(name) }));
 }
@@ -834,21 +998,14 @@ async function renderPairAnalysis() {
       .map((n, i) => statTileHtml(`Profilfaktor ${escapeHtml(n)}`, '…', 'wird berechnet', `pair-profile-${i}`))
       .join('');
 
-  const first = resultDailyRaw[0].date;
-  const last = resultDailyRaw[resultDailyRaw.length - 1].date;
-  el('pair-period').textContent = `über ${resultDailyRaw.length} Tage (${formatDateOnly(first)} – ${formatDateOnly(last)})`;
-
-  const pair = chartPair([a, b]);
-  renderPairMonthsChart(months, pair);
+  el('month-balance-pair').innerHTML = pairBannerHtml(a, b);
+  renderPairMonthsChart(months, chartPair([a, b]));
 
   // Bei schnellem Umklicken nur die Antwort der letzten Anfrage rendern.
   const requestId = ++pairAnalysisRequestId;
   try {
     const analysis = await postJson('/api/pair-analysis', { session_id: state.sessionId, tariff_names: [a, b] });
     if (requestId !== pairAnalysisRequestId) return;
-    // Erst ein-/ausblenden, dann rendern (Chart.js misst die Containergröße).
-    el('pair-prices-section').hidden = !pairHasMarket([a, b]);
-    renderPairProfileCharts(analysis.slots, pair);
     [a, b]
       .filter((n) => resultTariffTypes[n] === 'direktvermarktung')
       .forEach((n, i) => {
@@ -871,10 +1028,24 @@ async function renderPairAnalysis() {
 function renderDayDetailTable(detail, [a, b], titleHtml) {
   const aSafe = escapeHtml(a);
   const bSafe = escapeHtml(b);
-  el('day-detail-title').innerHTML = titleHtml;
-
   // Je Tarif eine Spaltengruppe: Vergütung (ohne Gebühren), inkl. Gebühren-Anteil, Erlös.
   const groups = [a, b].map((name) => ({ name, safe: escapeHtml(name), subtitle: TYPE_LABELS[resultTariffTypes[name]] }));
+  el('day-detail-title').innerHTML = titleHtml;
+  el('day-detail-kpis').innerHTML =
+    statTileHtml(
+      'Einspeisung an diesem Tag',
+      `${formatNum(detail.feed_in_kwh, 2)} kWh`,
+      `in ${detail.slots.filter((s) => s.feed_in_kwh > 0).length} Viertelstunden`,
+    ) +
+    groups.map((g) => {
+      const curtailed = detail.curtailed_kwh[g.name];
+      return statTileHtml(
+        `Erlös ${g.safe}`,
+        formatEur(detail.totals_eur[g.name]),
+        curtailed > 0 ? `davon ${formatNum(curtailed, 2)} kWh abgeschaltet` : '',
+      );
+    }).join('');
+
   // Bei der Zeitumstellung gibt es eine Uhrzeit doppelt -- dann Sommer-/Winterzeit dazuschreiben.
   const counts = detail.slots.reduce((acc, s) => ({ ...acc, [s.time]: (acc[s.time] || 0) + 1 }), {});
   const timeLabel = (s) => (counts[s.time] > 1 ? `${s.time} (${s.utc_offset_hours === 2 ? 'MESZ' : 'MEZ'})` : s.time);
@@ -892,7 +1063,9 @@ function renderDayDetailTable(detail, [a, b], titleHtml) {
       .map((s) => {
         const advantage = s.revenue_eur[a] - s.revenue_eur[b];
         const cells = groups.map((g) =>
-          `<td>${formatOptionalNum(s.rates_ct_kwh[g.name], 2)}</td>` +
+          (s.curtailed[g.name]
+            ? '<td class="curtailed" title="abgeschaltet, Börsenpreis − Abschlag unter 0">aus</td>'
+            : `<td>${formatOptionalNum(s.rates_ct_kwh[g.name], 2)}</td>`) +
           `<td>${formatOptionalNum(s.net_rates_ct_kwh[g.name], 2)}</td><td>${formatNum(s.revenue_eur[g.name], 4)}</td>`,
         ).join('');
         const spotClass = s.spot_ct_kwh !== null && s.spot_ct_kwh < 0 ? ' class="negative"' : '';
@@ -928,6 +1101,7 @@ function renderDayDetailTable(detail, [a, b], titleHtml) {
     '<strong>Vergütung</strong>: EEG-Satz bzw. Börsenpreis − Abschlag, ohne Grundgebühr. ' +
     '<strong>* inkl. Gebühren</strong>: Vergütung abzüglich Grundgebühr- und Einmalkosten-Anteil (Monatsgebühr ÷ Monatseinspeisung). ' +
     '<strong>Erlös</strong>: Erlös der Viertelstunde inkl. Gebühren-Anteil. ' +
+    '<strong>aus</strong>: abgeschaltet, weil Börsenpreis − Abschlag unter 0 lag – keine Einspeisung, Vergütung 0. ' +
     `<strong>Vorteil ${aSafe}</strong>: Erlös ${aSafe} − Erlös ${bSafe} (positiv = ${aSafe} besser). Ø-Werte einspeisegewichtet.`;
 }
 

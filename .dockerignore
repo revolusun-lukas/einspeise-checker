@@ -3,5 +3,6 @@ __pycache__
 *.pyc
 .pytest_cache
 *.csv
+!static/sample/beispiel-einspeisung-2025.csv
 .git
 tests

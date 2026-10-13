@@ -7,5 +7,7 @@ __pycache__/
 *.csv
 # ... außer den synthetischen Test-Fixtures
 !tests/fixtures/*.csv
+# ... und den bewusst veröffentlichten Beispieldaten für "Mit Beispieldaten ausprobieren"
+!static/sample/beispiel-einspeisung-2025.csv
 
 debug_*.png
