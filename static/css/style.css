@@ -1,0 +1,1094 @@
+:root {
+  --font-ui: "Merriweather Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-prose: "Merriweather", Georgia, "Times New Roman", serif;
+
+  --brand-orange: #f4623a;
+  --brand-orange-dark: #c34e2e;
+  --brand-green: #3e8e7e;
+  --brand-green-light: #7cd1b8;
+  --brand-yellow: #fabb51;
+  --brand-yellow-light: #faedc6;
+
+  --surface-1: #ffffff;
+  --page-plane: #f7f5f2;
+  --text-primary: #222222;
+  --text-secondary: #5c5a54;
+  --text-muted: #8a8880;
+  --gridline: #e6e3dc;
+  --baseline: #c9c6bc;
+  --border: rgba(34, 34, 34, 0.10);
+
+  --series-1: #f4623a; /* orange (brand) */
+  --series-2: #3e8e7e; /* gruen (brand) */
+  --series-3: #fabb51; /* gelb (brand) */
+  --series-4: #2a6f97; /* blau */
+  --series-5: #7cd1b8; /* hellgruen (brand) */
+  --series-6: #df73db; /* pink (brand) */
+  --series-7: #c34e2e; /* rostrot (brand) */
+  --series-8: #6c757d; /* grau */
+
+  --good: #3e8e7e;
+  --critical: #dc3545;
+  --warning-bg: #faedc6;
+  --warning-text: #7a5200;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-1: #201f1c;
+    --page-plane: #161513;
+    --text-primary: #f5f3ef;
+    --text-secondary: #c9c6bc;
+    --text-muted: #948f84;
+    --gridline: #35332e;
+    --baseline: #454138;
+    --border: rgba(255, 255, 255, 0.10);
+
+    --series-1: #f97b56;
+    --series-2: #5aab9b;
+    --series-3: #fabb51;
+    --series-4: #4d92bd;
+    --series-5: #7cd1b8;
+    --series-6: #e691e3;
+    --series-7: #d97354;
+    --series-8: #9a9ea1;
+
+    --good: #5aab9b;
+    --critical: #e66767;
+    --warning-bg: #3a2f0d;
+    --warning-text: #f0d27a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page-plane);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  line-height: 1.55;
+}
+
+.page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+.app-header h1 {
+  margin: 0 0 6px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font-family: var(--font-prose);
+  color: var(--text-secondary);
+  margin: 0 0 20px;
+}
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 2px rgba(34, 34, 34, 0.04), 0 4px 16px rgba(34, 34, 34, 0.04);
+}
+
+.step h2 {
+  margin-top: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.hint {
+  font-family: var(--font-prose);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: -4px;
+}
+
+.hint ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.hint li {
+  margin-bottom: 2px;
+}
+
+.upload-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  border: none;
+  border-radius: 999px;
+  padding: 11px 24px;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--brand-orange);
+  color: white;
+}
+
+.btn-primary:hover { background: var(--brand-orange-dark); }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--brand-orange);
+  border: 1.5px solid var(--brand-orange);
+  padding: 9.5px 22px;
+}
+
+.btn-secondary:hover {
+  background: var(--brand-orange);
+  color: white;
+}
+
+.help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  padding: 0;
+  border: 1.5px solid var(--brand-orange);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--brand-orange);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.help-btn:hover {
+  background: var(--brand-orange);
+  color: white;
+}
+
+.guide-steps {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-family: var(--font-prose);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.guide-steps li {
+  margin-bottom: 10px;
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spinner-rotate 0.6s linear infinite;
+}
+
+@keyframes btn-spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.example-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.example-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.example-card-title {
+  font-weight: 700;
+}
+
+.example-card-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.example-card-list li {
+  margin-bottom: 2px;
+}
+
+.example-card-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.example-empty-note {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.mapping-grid label, .tariff-box label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+select, input[type="number"], .scenario-location-search input {
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+select:focus, input[type="number"]:focus, .scenario-location-search input:focus {
+  outline: 2px solid var(--brand-orange);
+  outline-offset: 1px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.preview-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.preview-table th, .preview-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--gridline);
+  text-align: left;
+}
+
+.preview-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  background: var(--page-plane);
+}
+
+.warnings {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin-bottom: 14px;
+}
+
+.warnings ul { margin: 4px 0 0; padding-left: 18px; }
+
+.import-summary {
+  padding: 20px 24px;
+  background: var(--page-plane);
+  border-radius: 1rem;
+}
+
+.donate-highlight {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand-green);
+  background: var(--page-plane);
+  border-radius: 1rem;
+  padding: 20px 24px;
+  margin: 28px 0;
+}
+
+.donate-highlight h3 {
+  margin-top: 0;
+}
+
+.summary-hero {
+  text-align: center;
+  padding-bottom: 16px;
+}
+
+.summary-hero-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.summary-hero-value {
+  font-size: 2.75rem;
+  font-weight: 700;
+  color: var(--brand-orange);
+  margin-top: 4px;
+}
+
+.summary-hero-meta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+.summary-check-hint {
+  font-family: var(--font-prose);
+  font-size: 0.9rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0;
+}
+
+#summary-scenario-details {
+  font-family: var(--font-prose);
+  font-size: 0.9rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+#summary-scenario-details ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+#summary-scenario-details li {
+  margin-bottom: 2px;
+}
+
+#summary-warnings:not(:empty) {
+  margin-top: 12px;
+}
+
+#summary-warnings ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--warning-text);
+}
+
+.tariff-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+  margin-bottom: 14px;
+}
+
+.tariff-box {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tariff-box legend {
+  font-weight: 700;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.tariff-name-input {
+  font: inherit;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tariff-name-input:hover, .tariff-name-input:focus {
+  background: var(--page-plane);
+  outline: none;
+}
+
+.tariff-name-input[aria-invalid="true"] {
+  box-shadow: inset 0 -2px 0 var(--critical);
+}
+
+.field-error {
+  margin: -6px 0 0;
+  font-size: 0.8rem;
+  color: var(--critical);
+}
+
+.field-hint {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.tariff-box input[readonly] {
+  background: var(--page-plane);
+  color: var(--text-muted);
+}
+
+.tariff-preview {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.btn-link {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--brand-orange);
+  text-align: left;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+.tariff-estimate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--page-plane);
+}
+
+.tariff-estimate .btn {
+  align-self: flex-start;
+}
+
+.tariff-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tariff-inline-check input {
+  accent-color: var(--brand-orange);
+}
+
+.tariff-aufschlag-sum {
+  margin: -4px 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Einzelwerte liegen innerhalb von "Genauer berechnen" -- abgesetzt durch Linie statt
+   weiterer Hintergrundfläche, damit die Verschachtelung ruhig bleibt. */
+.tariff-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+
+.tariff-detail-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.stat-breakdown {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.btn-remove-tariff {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.btn-remove-tariff:hover {
+  background: var(--warning-bg);
+  color: var(--critical);
+}
+
+.tariff-actions {
+  margin-bottom: 18px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.stat-tile {
+  background: var(--page-plane);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.tariff-pick {
+  display: block;
+  width: 100%;
+  border: 2px solid transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tariff-pick:hover {
+  border-color: var(--border);
+}
+
+.tariff-pick.selected {
+  border-color: var(--brand-orange);
+}
+
+.tariff-pick {
+  position: relative;
+}
+
+.pick-badge {
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--brand-orange);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.tariff-pick.selected .pick-badge {
+  display: inline-block;
+}
+
+.pair-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+
+.pair-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 2px solid;
+  border-radius: 999px;
+  background: var(--page-plane);
+}
+
+.pair-chip-name {
+  font-weight: 700;
+}
+
+.pair-chip-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.pair-vs {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.pair-banner-hint {
+  margin-top: 2px;
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.stat-delta {
+  font-size: 0.85rem;
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
+.positive { color: var(--good); }
+.negative { color: var(--critical); }
+
+.result-block {
+  margin: 28px 0;
+}
+
+.pair-subhead {
+  margin: 22px 0 2px;
+  font-size: 0.95rem;
+}
+
+/* Rahmen um die Durchschnittstag-Charts, damit sie optisch nicht mit Einzeltagen verwechselt werden. */
+.avg-profile {
+  margin-top: 22px;
+  padding: 4px 16px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+.avg-profile-badge {
+  display: inline-block;
+  margin: 12px 0 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--page-plane);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.avg-profile-badge span {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* Paar-/Tagescharts haben höchstens 24 bzw. 13 Kategorien und liegen nicht in einem
+   Scroll-Container -- sie passen sich der Breite an, statt die 480-px-Mindestbreite zu erben. */
+.chart-canvas-wrap.pair-chart {
+  min-width: 0;
+  width: 100%;
+  height: 240px;
+}
+
+.day-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.day-compare-item {
+  background: var(--page-plane);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.day-compare-item h4 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.day-compare-item .day-title {
+  margin: 0 0 10px;
+}
+
+/* Zweite Kopfzeile: Unterspalten sind Zahlen, daher rechtsbündig -- auch die erste, die sonst
+   von th:first-child linksbündig gesetzt würde. Beide Kopfzeilen nicht sticky, damit sie sich
+   nicht überlagern. */
+.detail-table thead th {
+  position: static;
+  vertical-align: bottom;
+  line-height: 1.3;
+}
+
+.detail-table thead tr + tr th,
+.detail-table thead tr + tr th:first-child {
+  text-align: right;
+  font-weight: 500;
+  font-size: 0.78rem;
+}
+
+.detail-table th.group-head {
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--gridline);
+}
+
+.group-sub {
+  display: block;
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.day-detail-summary {
+  margin: -4px 0 16px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.detail-table tfoot .detail-sum td {
+  font-size: inherit;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: right;
+}
+
+.detail-table tfoot .detail-sum td:first-child {
+  text-align: left;
+}
+
+.result-block h3 {
+  margin-bottom: 4px;
+  font-size: 1rem;
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chart-header h3 {
+  margin-bottom: 0;
+}
+
+.granularity-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.granularity-btn {
+  border: none;
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  padding: 6px 16px;
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.granularity-btn + .granularity-btn {
+  border-left: 1px solid var(--border);
+}
+
+.granularity-btn.active {
+  background: var(--series-1);
+  color: white;
+}
+
+.month-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+.month-tabs[hidden] {
+  display: none;
+}
+
+.month-tab-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.month-tab-btn:hover:not(.active) {
+  background: var(--page-plane);
+}
+
+.month-tab-btn.active {
+  background: var(--series-1);
+  color: white;
+  border-color: var(--series-1);
+}
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.chart-scroll {
+  overflow-x: auto;
+}
+
+.chart-canvas-wrap {
+  position: relative;
+  min-width: 480px;
+}
+
+.day-title {
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.detail-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.detail-table th, .detail-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--gridline);
+  text-align: right;
+}
+
+.detail-table th:first-child, .detail-table td:first-child {
+  text-align: left;
+  width: 1%; /* Stunden-Spalte auf Inhaltsbreite schrumpfen, Restbreite geht an die Zahlenspalten */
+}
+
+/* Verbrauch-Spalte ebenfalls auf Inhaltsbreite, damit zwischen Stunde und Verbrauch keine Lücke entsteht. */
+.detail-table thead tr:first-child th:nth-child(2),
+.detail-table tbody td:nth-child(2),
+.detail-table tfoot td:nth-child(2) {
+  width: 1%;
+  padding-left: 4px;
+}
+
+.detail-table th:first-child, .detail-table td:first-child {
+  padding-right: 4px;
+}
+
+.detail-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  background: var(--page-plane);
+  position: sticky;
+  top: 0;
+}
+
+.detail-table tbody tr:hover {
+  background: var(--page-plane);
+}
+
+/* .field-hint setzt display und würde sonst das hidden-Attribut überstimmen. */
+.field-hint[hidden] {
+  display: none;
+}
+
+.error-banner {
+  background: var(--warning-bg);
+  color: var(--critical);
+  border: 1px solid var(--critical);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 0.9rem;
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 32px));
+  z-index: 1100;
+  box-shadow: 0 4px 16px rgba(34, 34, 34, 0.15);
+}
+
+.entry-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.entry-choice-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  text-align: left;
+  background: var(--page-plane);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.entry-choice-btn:hover {
+  border-color: var(--brand-orange);
+  background: var(--surface-1);
+}
+
+.entry-choice-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.entry-choice-btn:disabled:hover {
+  border-color: var(--border);
+  background: var(--page-plane);
+}
+
+.entry-choice-note {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--brand-orange-dark);
+}
+
+.agb-box {
+  background: var(--page-plane);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+
+.agb-heading {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.agb-consent-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.agb-consent-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--brand-orange);
+}
+
+.entry-choice-btn strong {
+  font-size: 1rem;
+}
+
+.entry-choice-btn span {
+  font-family: var(--font-prose);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.btn-back {
+  display: inline-block;
+  background: none;
+  border: none;
+  color: var(--brand-orange);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+.btn-back:hover {
+  text-decoration: underline;
+}
+
+
+/* ---------- Einspeise-Checker ---------- */
+
+/* Netto-Hinweis im Tarif-Schritt deutlich absetzen -- alle Eingaben und Ergebnisse sind netto. */
+.netto-note {
+  border-left: 4px solid var(--brand-orange);
+  padding: 8px 12px;
+  background: var(--page-plane);
+  border-radius: 4px;
+}
+
+.source-note {
+  margin: 0 0 16px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.tariff-check .field-hint {
+  display: block;
+}
+
+.mapping-grid label.is-disabled {
+  opacity: 0.5;
+}
+
+.upload-row input[type="file"]:disabled {
+  opacity: 0.5;
+}

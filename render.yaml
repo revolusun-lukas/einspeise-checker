@@ -1,0 +1,11 @@
+# Render Blueprint: baut das Dockerfile und startet einen einzelnen Web-Service.
+# Ein Worker-Prozess, weil Sessions, Preis-Cache und Rate-Limit im Arbeitsspeicher liegen.
+services:
+  - type: web
+    name: einspeise-checker
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: WEB_CONCURRENCY
+        value: "1"

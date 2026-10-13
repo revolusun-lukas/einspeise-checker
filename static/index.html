@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Einspeise-Checker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css?family=Merriweather+Sans:400,700" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css?family=Merriweather:400,700" rel="stylesheet">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="page">
+  <header class="app-header">
+    <h1>Einspeise-Checker</h1>
+    <p class="subtitle">Was hätte deine PV-Einspeisung erlöst – mit EEG-Vergütung oder in der Direktvermarktung zum Börsenpreis?</p>
+  </header>
+
+  <div id="error-banner" class="error-banner" hidden></div>
+
+  <section id="step-entry" class="card" tabindex="-1">
+    <h2>
+      1. Einspeisedaten hochladen
+      <button type="button" id="btn-open-help" class="help-btn" aria-label="Hilfe: Wie bekomme ich meine CSV-Datei?" title="Hilfe: Wie bekomme ich meine CSV-Datei?">?</button>
+    </h2>
+    <p class="hint">
+      Lade den CSV-Export deines Smartmeters oder Energiemessgeräts hoch (z.B. Shelly EM / Pro 3EM).
+      Gebraucht wird die <strong>Einspeisung</strong> – etwa die Spalte „Returned energy“ oder eine
+      Leistungs-/Netto-Spalte mit negativen Werten. Die Anwendung rechnet daraus auf Basis echter
+      Day-Ahead-Börsenpreise aus, was die Einspeisung in der Vergangenheit erlöst hätte.
+    </p>
+
+    <div class="agb-box">
+      <h3 class="agb-heading">Datennutzung beim CSV-Upload</h3>
+      <p class="hint">
+        Deine Messdaten werden nur für die Dauer dieser Sitzung im Arbeitsspeicher des Servers
+        verarbeitet, um den Erlösvergleich zu berechnen, und nirgends dauerhaft gespeichert.
+      </p>
+      <label class="agb-consent-label">
+        <input type="checkbox" id="agb-consent">
+        Ich stimme der beschriebenen Datennutzung zu.
+      </label>
+    </div>
+
+    <div class="upload-row">
+      <input type="file" id="csv-file" accept=".csv,text/csv" disabled>
+      <button id="btn-upload" class="btn btn-primary" disabled title="Bitte zuerst der Datennutzung zustimmen">Hochladen</button>
+    </div>
+  </section>
+
+  <section id="modal-help" class="card" tabindex="-1" hidden>
+    <button type="button" class="btn-back" data-back-to="step-entry">&larr; Zurück zum Upload</button>
+    <h2>Anleitung: Wie komme ich an meine CSV-Datei?</h2>
+
+    <div class="result-block">
+      <h3>Shelly EM / Shelly 3EM (Gen1)</h3>
+      <ol class="guide-steps">
+        <li>
+          <strong>IP-Adresse in der Shelly-App auslesen:</strong> Gerät antippen → Zahnrad →
+          „Geräteinformationen“, z.B. <code>192.168.178.176</code>.
+        </li>
+        <li>
+          Im selben WLAN im Browser öffnen:<br>
+          <code>http://&lt;IP-ADRESSE&gt;/emeter/0/em_data.csv</code><br>
+          Die Datei enthält je Minute <em>Active energy Wh</em> (Bezug) und
+          <em>Returned energy Wh</em> (Einspeisung), Zeitstempel in UTC. Beim 3EM gibt es je Phase eine
+          Datei (<code>0</code>, <code>1</code>, <code>2</code>) – für die saldierte Einspeisung ist
+          eine Gesamtmessung am Netzanschlusspunkt nötig.
+        </li>
+      </ol>
+    </div>
+
+    <div class="result-block">
+      <h3>Shelly Pro 3EM (Gen2/Gen3)</h3>
+      <ol class="guide-steps">
+        <li>
+          <code>http://&lt;IP-ADRESSE&gt;/emdata/0/data.csv?add_keys=true</code> aufrufen.
+          Einspeisung steht in den Spalten mit <code>ret</code> im Namen (z.B.
+          <code>total_act_ret_energy</code>), Bezug in <code>total_act_energy</code>.
+        </li>
+      </ol>
+    </div>
+
+    <div class="result-block">
+      <h3>Andere Geräte</h3>
+      <p class="hint">
+        Aus der App oder dem Portal (Wechselrichter, Netzbetreiber, Messstellenbetreiber) einen
+        Verlauf als CSV exportieren. Spaltenstruktur egal – nötig sind ein Zeitstempel und entweder
+        die Einspeisung (Energie je Intervall oder Zählerstand Einspeisung) oder eine Netto-Leistung,
+        bei der Einspeisung negativ ist. Hinweis: Die <em>Erzeugung</em> des Wechselrichters ist nicht
+        die Einspeisung – der Eigenverbrauch wird ja nicht vergütet.
+      </p>
+    </div>
+  </section>
+
+  <section id="modal-mapping" class="card" tabindex="-1" hidden>
+    <button type="button" class="btn-back" data-back-to="step-entry">&larr; Zurück zum Upload</button>
+    <h2>2. Spaltenzuordnung prüfen</h2>
+    <p class="hint">
+      Die Zuordnung wurde automatisch anhand der Spaltennamen und Beispielwerte vorgeschlagen.
+      Ein Blick in die Vorschau-Tabelle unten hilft dabei.
+    </p>
+
+    <div class="mapping-grid">
+      <label>
+        Zeitstempel-Spalte
+        <select id="select-timestamp-col"></select>
+        <span class="field-hint">Die Spalte mit Datum/Uhrzeit jeder Messung.</span>
+      </label>
+      <label>
+        Einspeise-Spalte
+        <select id="select-value-col"></select>
+        <span class="field-hint">Z.B. „Returned energy“ oder eine Leistungsspalte mit negativen Werten.</span>
+      </label>
+      <label>
+        Richtung der Werte
+        <select id="select-direction">
+          <option value="feed_in">Nur Einspeisung (positive Werte)</option>
+          <option value="net">Netto: negativ = Einspeisung, positiv = Bezug</option>
+        </select>
+        <span class="field-hint">
+          Bei Netto-Werten wird je Messintervall nur der negative Anteil als Einspeisung gezählt –
+          erst danach wird auf Viertelstunden summiert.
+        </span>
+      </label>
+      <label>
+        Bedeutung der Werte
+        <select id="select-value-type">
+          <option value="power_w">Momentanleistung (W)</option>
+          <option value="power_kw">Momentanleistung (kW)</option>
+          <option value="energy_wh">Energie pro Intervall (Wh)</option>
+          <option value="energy_kwh">Energie pro Intervall (kWh)</option>
+          <option value="counter_kwh">Kumulierter Zählerstand (kWh)</option>
+        </select>
+        <span class="field-hint">
+          Energie pro Intervall: Menge seit der letzten Zeile. Zählerstand: fortlaufend steigender
+          Wert, die Differenz wird automatisch gebildet.
+        </span>
+      </label>
+      <label id="grid-col-label">
+        Bezugsspalte (optional)
+        <select id="select-grid-col"></select>
+        <span class="field-hint">Netzbezug, z.B. „Active energy“ – gleiche Bedeutung wie die Einspeise-Spalte. Wird für spätere Speicher-Simulationen mit eingelesen.</span>
+      </label>
+      <label>
+        Zeitzone der Zeitstempel
+        <select id="select-timezone">
+          <option value="Europe/Berlin">Europe/Berlin (lokale deutsche Zeit)</option>
+          <option value="UTC">UTC</option>
+        </select>
+        <span class="field-hint">
+          Nur relevant, wenn die Zeitstempel keine Zeitzone enthalten. Unix-Zeitstempel sind
+          davon nicht betroffen.
+        </span>
+      </label>
+    </div>
+
+    <div id="mapping-warnings" class="warnings" hidden></div>
+
+    <div class="table-scroll">
+      <table id="preview-table" class="preview-table"></table>
+    </div>
+
+    <button id="btn-confirm-mapping" class="btn btn-primary">Bestätigen &amp; Viertelstundenwerte berechnen</button>
+  </section>
+
+  <section id="modal-tariffs" class="card" tabindex="-1" hidden>
+    <button type="button" class="btn-back" data-back-to="modal-mapping">&larr; Zurück zur Spaltenzuordnung</button>
+
+    <div id="import-summary" class="import-summary">
+      <div class="summary-hero">
+        <div class="summary-hero-label">Ermittelte Einspeisung</div>
+        <div class="summary-hero-value" id="summary-total-kwh">–</div>
+        <div class="summary-hero-meta" id="summary-meta">–</div>
+      </div>
+      <p class="summary-check-hint">
+        <strong>Bitte prüfen:</strong> Vergleiche diesen Wert mit der Einspeisung laut Zähler bzw.
+        Abrechnung des Netzbetreibers für denselben Zeitraum. Wirkt er nicht plausibel, eine andere
+        Spalte, Richtung oder Bedeutung wählen.
+      </p>
+      <div id="summary-warnings"></div>
+    </div>
+
+    <h2>3. Tarife eingeben</h2>
+    <p class="hint">
+      Mindestens 2, maximal 8 Einspeise-„Tarife“, beliebig kombinierbar, Namen frei wählbar
+      (eindeutig, max. 40 Zeichen).
+    </p>
+    <p class="hint netto-note">
+      <strong>Alle Werte netto</strong> (ohne Umsatzsteuer): Der Börsenpreis ist ein Nettopreis, und
+      private Anlagenbetreiber sind in der Regel Kleinunternehmer.<br>
+      <strong>EEG-Vergütung:</strong> fester Satz je eingespeister kWh laut Inbetriebnahmedatum.<br>
+      <strong>Direktvermarktung:</strong> Erlös je Viertelstunde = Börsenpreis − Abschlag des
+      Direktvermarkters, abzüglich Grundgebühr und einmaliger Kosten.
+    </p>
+
+    <div id="tariff-list" class="tariff-list"></div>
+
+    <div class="tariff-actions">
+      <button type="button" id="btn-add-tariff" class="btn btn-secondary">+ Tarif hinzufügen</button>
+    </div>
+
+    <button id="btn-calculate" class="btn btn-primary">Berechnen</button>
+  </section>
+
+  <section id="modal-results" class="card" tabindex="-1" hidden>
+    <button type="button" class="btn-back" data-back-to="modal-tariffs">&larr; Zurück zu den Tarifen</button>
+    <h2>4. Ergebnis</h2>
+    <p class="hint">
+      Erlös je Tarif (netto) über den kompletten importierten Zeitraum, gerechnet je Viertelstunde.
+      Grundgebühr und Einmalkosten der Direktvermarktung sind bereits abgezogen und je Kalendermonat
+      anteilig auf die Einspeisung des Monats verteilt.
+    </p>
+
+    <div id="missing-price-note" class="warnings" hidden></div>
+    <div id="price-source-note" class="source-note"></div>
+
+    <p class="hint"><strong>Zwei Tarife anklicken</strong>, um sie im Paar- und Tagesvergleich unten gegenüberzustellen.</p>
+    <div class="stat-grid" id="stat-grid-tariffs"></div>
+
+    <div class="stat-grid">
+      <div class="stat-tile">
+        <div class="stat-label">Bester Tarif</div>
+        <div class="stat-value" id="stat-best">–</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Mehrerlös ggü. schlechtestem Tarif</div>
+        <div class="stat-value" id="stat-advantage">–</div>
+        <div class="stat-delta" id="stat-advantage-detail">–</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Einspeisung</div>
+        <div class="stat-value" id="stat-feed-in">–</div>
+        <div class="stat-delta" id="stat-period">–</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-label">Marktwert deiner Einspeisung</div>
+        <div class="stat-value" id="stat-market-value">–</div>
+        <div class="stat-delta" id="stat-market-value-detail">–</div>
+      </div>
+    </div>
+
+    <div id="negative-price-note" class="warnings" hidden></div>
+
+    <div class="result-block" id="pair-analysis">
+      <h3>Paarvergleich über den gesamten Zeitraum</h3>
+      <div class="pair-banner" id="pair-title"></div>
+      <p class="hint pair-banner-hint">Anderes Paar? Oben einfach eine andere Tarifkachel anklicken.</p>
+      <div class="stat-grid" id="pair-kpis"></div>
+
+      <h4 class="pair-subhead">Monatsbilanz</h4>
+      <p class="hint">Differenz der Monatserlöse (inkl. Gebühren); die Farbe zeigt, welcher Tarif im Monat mehr erlöst hat.</p>
+      <div class="chart-legend" id="legend-pair-months"></div>
+      <div class="chart-canvas-wrap pair-chart"><canvas id="chart-pair-months"></canvas></div>
+
+      <div class="avg-profile">
+        <p class="avg-profile-badge">Ø Durchschnittstag <span id="pair-period"></span></p>
+        <p class="hint">
+          Die folgenden Schaubilder zeigen <strong>keinen einzelnen Tag</strong>, sondern einen
+          gemittelten „Durchschnittstag“: Jeder Wert ist der Mittelwert aller Tage im Zeitraum zur
+          jeweiligen Viertelstunde (z.B. 12:15 = Durchschnitt aller 12:15-Viertelstunden).
+        </p>
+
+        <!-- Nur sichtbar, wenn mindestens eine Direktvermarktung im Paar ist (EEG allein: flache Linien). -->
+        <div id="pair-prices-section">
+          <h4 class="pair-subhead">Ø Vergütung je Uhrzeit</h4>
+          <p class="hint">Ohne Grundgebühr. Bei der Direktvermarktung Börsenpreis − Abschlag: zeigt, zu welchen Uhrzeiten Strom im Schnitt viel oder wenig wert war.</p>
+          <div class="chart-legend" id="legend-pair-prices"></div>
+          <div class="chart-canvas-wrap pair-chart"><canvas id="chart-pair-prices"></canvas></div>
+        </div>
+
+        <h4 class="pair-subhead">Ø Einspeisung je Uhrzeit</h4>
+        <p class="hint">Wie viel du im Schnitt pro Tag in dieser Viertelstunde eingespeist hast. Liegen die hohen Balken dort, wo die Vergütungskurve oben niedrig ist, verliert die Direktvermarktung.</p>
+        <div class="chart-canvas-wrap pair-chart"><canvas id="chart-pair-feed-in"></canvas></div>
+      </div>
+    </div>
+
+    <div class="result-block">
+      <h3>Tagesvergleich</h3>
+      <div class="pair-banner" id="day-compare-pair"></div>
+      <div class="day-compare">
+        <div class="day-compare-item">
+          <h4 id="day-a-heading"></h4>
+          <p class="day-title" id="day-a-title"></p>
+          <button type="button" class="btn btn-secondary" id="btn-day-a-detail">Viertelstunden-Analyse</button>
+        </div>
+        <div class="day-compare-item">
+          <h4 id="day-b-heading"></h4>
+          <p class="day-title" id="day-b-title"></p>
+          <button type="button" class="btn btn-secondary" id="btn-day-b-detail">Viertelstunden-Analyse</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="result-block">
+      <div class="chart-header">
+        <h3>Erlöse im Vergleich</h3>
+        <div class="granularity-toggle" id="chart-granularity-toggle">
+          <button type="button" class="granularity-btn active" data-granularity="month">Monat</button>
+          <button type="button" class="granularity-btn" data-granularity="day">Tag</button>
+        </div>
+      </div>
+      <div class="month-tabs" id="chart-month-tabs" hidden></div>
+      <div class="chart-legend" id="legend-daily"></div>
+      <div class="chart-scroll">
+        <div class="chart-canvas-wrap" id="chart-daily-wrap">
+          <canvas id="chart-daily"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-restart" class="btn btn-secondary">Neuen Import starten</button>
+  </section>
+
+  <section id="modal-day-detail" class="card" tabindex="-1" hidden>
+    <button type="button" class="btn-back" data-back-to="modal-results">&larr; Zurück zum Ergebnis</button>
+    <h2>Viertelstunden-Analyse</h2>
+    <p class="day-detail-summary" id="day-detail-title"></p>
+
+    <h4 class="pair-subhead">Bilanz je Viertelstunde</h4>
+    <p class="hint">Erlösdifferenz je Viertelstunde an diesem Tag (inkl. Gebühren-Anteil); die Farbe zeigt, welcher Tarif mehr erlöst hat.</p>
+    <div class="chart-legend" id="legend-day-advantage"></div>
+    <div class="chart-canvas-wrap pair-chart"><canvas id="chart-day-advantage"></canvas></div>
+
+    <h4 class="pair-subhead">Vergütung je Viertelstunde an diesem Tag</h4>
+    <p class="hint">Ohne Grundgebühr — tatsächliche Werte dieses Tages, kein Durchschnitt.</p>
+    <div class="chart-legend" id="legend-day-prices"></div>
+    <div class="chart-canvas-wrap pair-chart"><canvas id="chart-day-prices"></canvas></div>
+
+    <h4 class="pair-subhead">Einspeisung je Viertelstunde an diesem Tag</h4>
+    <div class="chart-canvas-wrap pair-chart"><canvas id="chart-day-feed-in"></canvas></div>
+
+    <h4 class="pair-subhead">Viertelstundenwerte</h4>
+    <div class="table-scroll"><table id="table-day-detail" class="detail-table"></table></div>
+    <p class="hint" id="day-detail-note"></p>
+  </section>
+</div>
+
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/js/charts.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# CSV-Dateien, die beim lokalen Ausprobieren anfallen (Messdaten nie committen) ...
+*.csv
+# ... außer den synthetischen Test-Fixtures
+!tests/fixtures/*.csv
+
+debug_*.png
