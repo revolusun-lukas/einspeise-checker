@@ -11,6 +11,8 @@ Rechnung je Viertelstunde q:
                                 − Grundgebühr-Anteil(q) − Einmalkosten-Anteil(q)
                      Ohne Abschalten kostet Einspeisung Geld, wenn Börsenpreis − Abschlag < 0; mit
                      "Abschalten bei negativer Vergütung" sind Einspeisung und Vergütung dann 0.
+  Mit fiktivem Speicher (speicher_kwh > 0) wird die Einspeisung je Tarif zeitlich verschoben, so dass
+  Σ Einspeisung × Vergütung maximal wird (app/calculation/storage.py).
 """
 from __future__ import annotations
 
@@ -19,6 +21,8 @@ from datetime import date
 
 import numpy as np
 import pandas as pd
+
+from app.calculation.storage import optimize_storage
 
 LOCAL_TZ = "Europe/Berlin"
 SLOTS_PER_HOUR = 4
@@ -32,9 +36,11 @@ class CalculationDetail:
     local_index: pd.DatetimeIndex
     spot_ct_kwh: pd.Series  # Börsenpreis netto, NaN = kein Preis
     measured_kwh: pd.Series  # gemessene Einspeisung (Viertelstunden ohne Preis = 0)
-    # Je Tarif die tatsächlich eingespeiste Menge: gemessene Einspeisung, bei "Abschalten bei
-    # negativer Vergütung" ohne die abgeschalteten Viertelstunden (später auch HEMS).
+    # Je Tarif die tatsächlich eingespeiste Menge: gemessene Einspeisung, ohne abgeschaltete
+    # Viertelstunden und -- mit fiktivem Speicher -- zeitlich verschoben.
     feed_in_kwh: dict[str, pd.Series]
+    curtail_kwh: dict[str, pd.Series]  # je Tarif abgeregelte Menge
+    soc_kwh: dict[str, pd.Series | None]  # Füllstand des fiktiven Speichers, None = kein Speicher
     rates_ct_kwh: dict[str, pd.Series]  # Vergütung je kWh ohne Grundgebühr, NaN = kein Preis
     net_rates_ct_kwh: dict[str, pd.Series]  # Vergütung je kWh abzüglich Grundgebühr-/Einmalkosten-Anteil
     revenue_eur: dict[str, pd.Series]  # Erlös inkl. Abzug Grundgebühr-/Einmalkosten-Anteil
@@ -81,6 +87,15 @@ def _first_year_share(base_weight: pd.Series) -> float:
     return min(1.0, 12 / months_in_period) / 12 if months_in_period > 0 else 0.0
 
 
+def _feed_in_without_storage(kwh: pd.Series, rate: pd.Series, curtail_allowed: bool) -> tuple[pd.Series, pd.Series]:
+    """(Einspeisung, abgeregelte Menge) ohne Speicher: Abgeschaltet wird, sobald die Vergütung
+    (Börsenpreis − Abschlag) negativ ist -- also auch bei Börsenpreisen zwischen 0 und dem Abschlag."""
+    if not curtail_allowed:
+        return kwh, pd.Series(0.0, index=kwh.index)
+    curtail = kwh.where(rate < 0, 0.0)
+    return kwh - curtail, curtail
+
+
 def _round_or_none(value, digits: int):
     return None if value is None or pd.isna(value) else round(float(value), digits)
 
@@ -110,6 +125,8 @@ def calculate_revenue(feed_in_kwh: pd.Series, prices_eur_mwh: pd.Series, tariffs
     names: list[str] = []
     types: dict[str, str] = {}
     feed_in: dict[str, pd.Series] = {}
+    curtails: dict[str, pd.Series] = {}
+    socs: dict[str, pd.Series | None] = {}
     rates: dict[str, pd.Series] = {}
     net_rates: dict[str, pd.Series] = {}
     revenue: dict[str, pd.Series] = {}
@@ -120,33 +137,48 @@ def calculate_revenue(feed_in_kwh: pd.Series, prices_eur_mwh: pd.Series, tariffs
         if name in types:
             raise ValueError(f"Tarifname '{name}' wird mehrfach verwendet. Bitte eindeutige Namen vergeben.")
 
-        tariff_kwh = kwh
-        curtailed = pd.Series(False, index=full_index)
-        lost_negative = 0.0
-        curtailed_kwh = 0.0
-        avoided_negative = 0.0
+        storage_kwh = float(getattr(tariff, "speicher_kwh", 0) or 0)
         if tariff.type == "eeg":
             rate = pd.Series(float(tariff.verguetung_ct_kwh), index=full_index)
             if tariff.keine_verguetung_bei_negativen_preisen:
-                lost_negative = float((tariff_kwh[negative] * rate[negative]).sum() / 100)
                 rate = rate.mask(negative, 0.0)
             fee_per_month = 0.0
             setup_per_month = 0.0
+            curtail_allowed = False
         else:
             rate = spot_ct - float(tariff.abschlag_ct_kwh)
-            if tariff.abschalten_bei_negativer_verguetung:
-                # Abgeschaltet wird, sobald Börsenpreis − Abschlag < 0 -- also auch bei Börsenpreisen
-                # zwischen 0 und dem Abschlag, nicht erst bei negativem Börsenpreis.
-                curtailed = has_price & (rate < 0)
-                curtailed_kwh = float(kwh[curtailed].sum())
-                # Was die Einspeisung in diesen Viertelstunden gekostet hätte.
-                avoided_negative = -float((kwh[curtailed] * rate[curtailed]).sum() / 100)
-                tariff_kwh = kwh.mask(curtailed, 0.0)
-                # Ausgezahlt wird dort nichts -- Vergütung 0 statt des negativen Werts.
-                rate = rate.mask(curtailed, 0.0)
             fee_per_month = float(tariff.grundgebuehr_eur_monat)
             setup_per_month = float(tariff.einmalkosten_eur) * first_year_share
+            curtail_allowed = bool(tariff.abschalten_bei_negativer_verguetung)
         rate = rate.where(has_price)
+
+        base_kwh, base_curtail = _feed_in_without_storage(kwh, rate, curtail_allowed)
+        soc = None
+        storage_stats = {"charged": 0.0, "discharged": 0.0, "gain": 0.0}
+        if storage_kwh > 0:
+            opt = optimize_storage(kwh.to_numpy(), rate.to_numpy(), storage_kwh, curtail_allowed)
+            tariff_kwh = pd.Series(opt.feed_in_kwh, index=full_index)
+            curtail = pd.Series(opt.curtail_kwh, index=full_index)
+            soc = pd.Series(opt.soc_kwh, index=full_index)
+            storage_stats = {
+                "charged": float(opt.charge_kwh.sum()),
+                "discharged": float(opt.discharge_kwh.sum()),
+                # Mehrerlös allein aus der Energie -- Gebühren hängen nicht vom Speicher ab.
+                "gain": float(((tariff_kwh - base_kwh) * rate).fillna(0.0).sum() / 100),
+            }
+        else:
+            tariff_kwh, curtail = base_kwh, base_curtail
+
+        # Mit Abschalten wird bei negativer Vergütung nichts eingespeist und nichts ausgezahlt --
+        # Vergütung 0 statt des negativen Werts (Anzeige, Gebühren-Anteil).
+        no_pay = curtail_allowed & has_price & (rate < 0)
+        curtailed_kwh = float(curtail.sum())
+        # Was die abgeregelte Menge gekostet hätte (nur der negative Teil der Vergütung).
+        avoided_negative = -float((curtail * rate.clip(upper=0)).fillna(0.0).sum() / 100)
+        lost_negative = 0.0
+        if tariff.type == "eeg" and tariff.keine_verguetung_bei_negativen_preisen:
+            lost_negative = float(tariff_kwh[negative].sum() * float(tariff.verguetung_ct_kwh) / 100)
+        rate = rate.mask(no_pay, 0.0)
         # Grundgebühr je Tarif auf dessen eigene Einspeisung verteilen (abgeschaltete Viertelstunden
         # tragen keinen Anteil).
         base_weight, base_per_kwh = _base_fee_weights(full_index, local_index, tariff_kwh)
@@ -158,9 +190,11 @@ def calculate_revenue(feed_in_kwh: pd.Series, prices_eur_mwh: pd.Series, tariffs
         names.append(name)
         types[name] = tariff.type
         feed_in[name] = tariff_kwh
+        curtails[name] = curtail
+        socs[name] = soc
         rates[name] = rate
         # Abgeschaltete Viertelstunden tragen keinen Gebühren-Anteil.
-        net_rates[name] = (rate - base_per_kwh * (fee_per_month + setup_per_month)).mask(curtailed, 0.0)
+        net_rates[name] = (rate - base_per_kwh * (fee_per_month + setup_per_month)).mask(no_pay, 0.0)
         revenue[name] = energy - base - setup
         energy_total = float(energy.sum())
         tariff_kwh_total = float(tariff_kwh.sum())
@@ -173,6 +207,8 @@ def calculate_revenue(feed_in_kwh: pd.Series, prices_eur_mwh: pd.Series, tariffs
             "lost_negative": lost_negative,
             "curtailed_kwh": curtailed_kwh,
             "avoided_negative": avoided_negative,
+            "storage_kwh": storage_kwh,
+            "storage": storage_stats,
             "kwh": tariff_kwh_total,
             "avg": total / tariff_kwh_total * 100 if tariff_kwh_total else 0.0,
             "energy_avg": energy_total / tariff_kwh_total * 100 if tariff_kwh_total else 0.0,
@@ -212,6 +248,13 @@ def calculate_revenue(feed_in_kwh: pd.Series, prices_eur_mwh: pd.Series, tariffs
                 "lost_negative_eur": round(totals[n]["lost_negative"], 2),
                 "curtailed_kwh": round(totals[n]["curtailed_kwh"], 2),
                 "avoided_negative_eur": round(totals[n]["avoided_negative"], 2),
+                "storage_kwh": totals[n]["storage_kwh"],
+                "storage_gain_eur": round(totals[n]["storage"]["gain"], 2),
+                "storage_charged_kwh": round(totals[n]["storage"]["charged"], 1),
+                "storage_discharged_kwh": round(totals[n]["storage"]["discharged"], 1),
+                # Vollzyklen = ausgespeicherte Menge ÷ Kapazität.
+                "storage_cycles": round(totals[n]["storage"]["discharged"] / totals[n]["storage_kwh"], 1)
+                if totals[n]["storage_kwh"] else 0.0,
                 "feed_in_kwh": round(totals[n]["kwh"], 1),
                 # Ø-Erlös je eingespeister kWh nach Abzug aller Gebühren bzw. nur aus der Energie.
                 "avg_ct_kwh": round(totals[n]["avg"], 2),
@@ -248,6 +291,8 @@ def calculate_revenue(feed_in_kwh: pd.Series, prices_eur_mwh: pd.Series, tariffs
         spot_ct_kwh=spot_ct,
         measured_kwh=kwh,
         feed_in_kwh=feed_in,
+        curtail_kwh=curtails,
+        soc_kwh=socs,
         rates_ct_kwh=rates,
         net_rates_ct_kwh=net_rates,
         revenue_eur=revenue,
@@ -296,7 +341,8 @@ def day_detail(detail: CalculationDetail, day: date, names: list[str]) -> dict:
     slots = detail.local_index[mask]
     spot = detail.spot_ct_kwh.values[mask]
     measured = detail.measured_kwh.values[mask]
-    kwh = {n: detail.feed_in_kwh[n].values[mask] for n in names}
+    curtail = {n: detail.curtail_kwh[n].values[mask] for n in names}
+    soc = {n: None if detail.soc_kwh[n] is None else detail.soc_kwh[n].values[mask] for n in names}
     rates = {n: detail.rates_ct_kwh[n].values[mask] for n in names}
     net_rates = {n: detail.net_rates_ct_kwh[n].values[mask] for n in names}
     revenue = {n: detail.revenue_eur[n].values[mask] for n in names}
@@ -305,7 +351,7 @@ def day_detail(detail: CalculationDetail, day: date, names: list[str]) -> dict:
         "date": day.isoformat(),
         "feed_in_kwh": round(float(measured.sum()), 3),
         # Je Tarif durch Abschalten nicht eingespeiste Menge an diesem Tag.
-        "curtailed_kwh": {n: round(float((measured - kwh[n]).sum()), 3) for n in names},
+        "curtailed_kwh": {n: round(float(curtail[n].sum()), 3) for n in names},
         # 4 Nachkommastellen wie bei den Tageswerten, damit die im Frontend gebildete
         # Differenz nicht durch doppeltes Runden um einen Cent abweicht.
         "totals_eur": {n: round(float(revenue[n].sum()), 4) for n in names},
@@ -315,7 +361,8 @@ def day_detail(detail: CalculationDetail, day: date, names: list[str]) -> dict:
                 "time": ts.strftime("%H:%M"),
                 "utc_offset_hours": ts.utcoffset().total_seconds() / 3600,
                 "feed_in_kwh": round(float(measured[i]), 4),
-                "curtailed": {n: bool(kwh[n][i] < measured[i]) for n in names},
+                "curtailed": {n: bool(curtail[n][i] > 1e-9) for n in names},
+                "soc_kwh": {n: None if soc[n] is None else round(float(soc[n][i]), 3) for n in names},
                 "spot_ct_kwh": _round_or_none(spot[i], 3),
                 "rates_ct_kwh": {n: _round_or_none(rates[n][i], 3) for n in names},
                 "net_rates_ct_kwh": {n: _round_or_none(net_rates[n][i], 3) for n in names},

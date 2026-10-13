@@ -278,6 +278,12 @@
       <div class="chart-canvas-wrap fit-chart" id="chart-daily-wrap">
         <canvas id="chart-daily"></canvas>
       </div>
+      <!-- Nur im Tagesverlauf und nur, wenn mindestens ein Tarif einen fiktiven Speicher hat. -->
+      <div id="chart-soc-block" hidden>
+        <h4 class="pair-subhead">Speicherstand</h4>
+        <div class="chart-legend" id="legend-soc"></div>
+        <div class="chart-canvas-wrap fit-chart soc-chart"><canvas id="chart-soc"></canvas></div>
+      </div>
     </div>
 
     <div class="result-block" id="pair-analysis">

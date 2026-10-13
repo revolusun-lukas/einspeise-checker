@@ -6,6 +6,12 @@
 const SERIES_VARS = ['--series-1', '--series-2', '--series-3', '--series-4', '--series-5', '--series-6', '--series-7', '--series-8'];
 
 let dailyChartInstance = null;
+let socChartInstance = null;
+
+// Feste Breite der Y-Achsen im Tagesverlauf: Erlös- und Speicherstand-Diagramm liegen untereinander,
+// ihre Zeitachsen sollen exakt übereinander stehen -- unabhängig von der Länge der Achsenbeschriftung.
+const CURVE_AXIS_WIDTH_PX = 64;
+const fixAxisWidth = (scale) => { scale.width = CURVE_AXIS_WIDTH_PX; };
 
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -279,7 +285,13 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null, sp
             footer: (ctxs) => {
               if (!ctxs.length) return '';
               const item = items[ctxs[0].dataIndex];
-              if (isCurve) return `Einspeisung: ${formatDe(item.feed_in_kwh, 3)} kWh`;
+              if (isCurve) {
+                // Füllstand nur für Tarife mit fiktivem Speicher (soc[name] !== null).
+                const socLines = tariffNames
+                  .filter((name) => item.soc && item.soc[name] != null)
+                  .map((name) => `Speicher ${name}: ${formatDe(item.socPct[name], 0)} % (${formatDe(item.soc[name], 1)} kWh)`);
+                return [`PV-Überschuss (gemessen): ${formatDe(item.feed_in_kwh, 3)} kWh`, ...socLines];
+              }
               return onBarClick ? 'Klicken für Details' : '';
             },
           },
@@ -292,6 +304,7 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null, sp
           beginAtZero: true,
           ...revenueRange,
           ticks: { ...commonScaleOptions().ticks, callback: tickLabel },
+          ...(isCurve ? { afterFit: fixAxisWidth } : {}),
           title: { display: true, text: cfg.axisTitle, color: cssVar('--text-secondary') },
         },
         ...(spotValues ? {
@@ -299,11 +312,85 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null, sp
             ...commonScaleOptions(),
             ...spotRange,
             ticks: { ...commonScaleOptions().ticks, callback: tickLabel },
+            ...(isCurve ? { afterFit: fixAxisWidth } : {}),
             position: 'right',
             grid: { drawOnChartArea: false },
             title: { display: true, text: 'Börsenpreis ct/kWh', color: cssVar('--text-secondary') },
           },
         } : {}),
+      },
+    },
+  });
+}
+
+function hideSocChart() {
+  if (socChartInstance) {
+    socChartInstance.destroy();
+    socChartInstance = null;
+  }
+  document.getElementById('chart-soc-block').hidden = true;
+}
+
+/* Speicherstand in % je Tarif mit fiktivem Speicher (Tagesverlauf). items wie beim Erlös-Diagramm
+   ({label, socPct: {tarif: % | null}}); storageNames = Tarife mit Speicher, colorIndex je Tarif aus
+   der Tarifliste, damit die Linie dieselbe Farbe hat wie die Erlös-Balken. */
+function renderSocChart(items, storageNames, tariffNames, granularity) {
+  if (!storageNames.length) {
+    hideSocChart();
+    return;
+  }
+  document.getElementById('chart-soc-block').hidden = false;
+  document.getElementById('legend-soc').innerHTML = storageNames
+    .map((name) => `<span class="legend-item"><span class="legend-line" style="background:${seriesColor(tariffNames.indexOf(name))}"></span>${escapeHtml(name)}</span>`)
+    .join('');
+  if (socChartInstance) socChartInstance.destroy();
+
+  const xScale = granularity === 'quarter'
+    ? quarterHourScale()
+    : { ...commonScaleOptions(), ticks: { ...commonScaleOptions().ticks, maxRotation: 0 } };
+  socChartInstance = new Chart(document.getElementById('chart-soc').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: items.map((it) => it.label),
+      datasets: storageNames.map((name) => ({
+        label: name,
+        data: items.map((it) => it.socPct[name]),
+        borderColor: seriesColor(tariffNames.indexOf(name)),
+        backgroundColor: seriesColor(tariffNames.indexOf(name)),
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0,
+      })),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${formatDe(c.parsed.y, 0)} %` } },
+      },
+      // Wie im Erlös-Diagramm: Balken-Kategorien sind mittig versetzt -- sonst stünden die Punkte
+      // nicht unter den zugehörigen Balken.
+      scales: {
+        x: { ...xScale, offset: true },
+        y: {
+          ...commonScaleOptions(),
+          min: 0,
+          max: 100,
+          ticks: { ...commonScaleOptions().ticks, stepSize: 50, callback: (v) => `${v} %` },
+          afterFit: fixAxisWidth,
+        },
+        // Leere rechte Achse in derselben Breite wie die Börsenpreis-Achse darüber.
+        yRight: {
+          position: 'right',
+          display: true,
+          grid: { drawOnChartArea: false, drawTicks: false },
+          border: { display: false },
+          ticks: { display: false },
+          afterFit: fixAxisWidth,
+        },
       },
     },
   });

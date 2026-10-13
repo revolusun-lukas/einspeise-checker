@@ -77,6 +77,7 @@ Kleinunternehmer.
 - **Direktvermarktung**: Abschlag (ct/kWh), Grundgebühr (€/Monat, wahlweise als Jahresbetrag
   eingegeben) und Einmalkosten (€, z. B. Smart Meter). Optional „Abschalten bei negativer
   Vergütung“: Nicht einspeisen, sobald Börsenpreis − Abschlag unter 0 liegt.
+- **Fiktiver Speicher** (beide Tarifarten, kWh, 0 = ohne): wird je Tarif optimal gefahren, siehe unten.
 
 Die vorbelegten Werte sind Beispiele und sollten durch das eigene Angebot bzw. die eigene Abrechnung
 ersetzt werden.
@@ -84,6 +85,9 @@ ersetzt werden.
 ### 4. Ergebnis
 
 - Erlös je Tarif nach Abzug aller Gebühren, Differenz zum besten Tarif, Ø-Erlös in ct/kWh und Einspeisemenge.
+  Mit Speicher zusätzlich Mehrerlös ggü. demselben Tarif ohne Speicher, verschobene kWh und Vollzyklen;
+  im Tagesverlauf darunter ein Diagramm „Speicherstand“ (% der Kapazität je Tarif, Zeitachse bündig mit
+  dem Erlös-Diagramm); der Tooltip nennt den Stand in % und kWh.
 - „Marktwert“ der Einspeisung: der einspeisegewichtete Ø-Börsenpreis im Vergleich zum zeitlichen Ø.
 - Hinweis auf negative Preise: Anzahl der Viertelstunden, wie viele davon mit Einspeisung, kWh und Anteil.
 - Angabe, welche Preisauflösung verwendet wurde (siehe unten).
@@ -110,6 +114,25 @@ Direktvermarktung: Erlös(q) = Einspeisung(q) × (Börsenpreis(q) − Abschlag)
   Viertelstunden tragen keinen Gebühren-Anteil; ausgewiesen werden die abgeschaltete Menge und die
   dadurch vermiedenen Kosten. Die gemessene
   Einspeisung (Tageswerte, Tagesdetail) bleibt unverändert.
+- **Fiktiver Speicher** (`app/calculation/storage.py`): Er sitzt zwischen PV-Überschuss (= gemessene
+  Einspeisung) und Netz, lädt nur aus dem Überschuss, nie aus dem Netz, und speist später ein. Je Tarif
+  wird die Fahrweise als lineares Programm optimiert (HiGHS über `scipy.optimize.linprog`):
+
+  ```
+  Einspeisung(q) = Überschuss(q) − laden(q) − abregeln(q) + entladen(q)
+  Füllstand(q)   = Füllstand(q−1) + η · laden(q) − entladen(q) / η          (Start leer, η = √0,9)
+  0 ≤ Füllstand ≤ Kapazität,  laden, entladen ≤ Kapazität × 0,5 kW/kWh × 0,25 h
+  Ziel: Σ Einspeisung(q) × Vergütung(q) maximal
+  ```
+
+  Feste Annahmen: Leistung = halbe Kapazität je Stunde, 90 % Wirkungsgrad je Lade-/Entladezyklus.
+  Abregeln ist nur mit „Abschalten bei negativer Vergütung“ erlaubt. Entladen nur bei positiver
+  Vergütung (sonst würde das LP Energie über die Verluste „vernichten“). Die Optimierung kennt alle
+  Preise und den PV-Verlauf im Voraus: Das Ergebnis ist der **höchstmögliche** Mehrerlös. Bei festem
+  EEG-Satz lohnt der Speicher nur mit der Regel „keine Vergütung bei negativen Preisen“. Rechenzeit:
+  etwa 2–3 s je Tarif mit Speicher für ein Jahr; die Berechnung läuft im Threadpool.
+  Der Speicher kommt zu einem vorhandenen hinzu (dessen Wirkung steckt schon in der Messung) und
+  verschiebt nur Einspeisung, deckt keinen Eigenverbrauch (dafür bräuchte es Verbrauchsdaten, siehe unten).
 - Die **Grundgebühr** wird je Kalendermonat proportional zur Einspeisung des Monats verteilt. Das ist
   `_base_fee_weights` aus dem Tarifcheck. Angebrochene Monate zahlen nur ihren zeitlichen Anteil,
   Monate ohne Einspeisung verteilen den Betrag gleichmäßig.
@@ -153,6 +176,7 @@ app/
     prices.py            Zusammenführung inkl. Herkunft je Viertelstunde
   calculation/
     revenue.py           Erlösvergleich, Paaranalyse, Tagesdetail
+    storage.py           Fiktiver Speicher: optimale Fahrweise (lineares Programm, scipy/HiGHS)
   routes/
     import_routes.py     POST /api/import/upload, /api/import/confirm
     calculate_routes.py  POST /api/calculate, /api/day-detail, /api/pair-analysis
@@ -186,5 +210,6 @@ Höhe per `postMessage` mit `source: 'einspeise-checker'`:
 
 ## Später (vorbereitet, noch nicht umgesetzt)
 
-- **HEMS-Slider / virtueller Speicher**: Dafür werden Bezug und Einspeisung gebraucht. Der Importer
-  liest den Bezug schon optional ein (`Session.grid_kwh`).
+- **HEMS / Speicher mit Eigenverbrauch**: Der fiktive Speicher verschiebt heute nur Einspeisung. Soll er
+  auch den eigenen Verbrauch decken, werden Bezug und Einspeisung gebraucht. Der Importer liest den
+  Bezug schon optional ein (`Session.grid_kwh`).

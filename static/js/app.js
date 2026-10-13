@@ -277,9 +277,13 @@ const TYPE_LABELS = { eeg: 'EEG', direktvermarktung: 'Direktvermarktung' };
 // mitwandern. Sobald der Nutzer den Namen selbst editiert, bleibt er fest.
 // Startwerte sind Beispiele (netto) und sollen durch eigene Werte ersetzt werden.
 let tariffs = [
-  { uid: 1, type: 'eeg', name: 'EEG-Vergütung', autoName: true, verguetung_ct_kwh: 7.86, keine_verguetung_bei_negativen_preisen: true },
+  { uid: 1, type: 'eeg', name: 'EEG-Vergütung', autoName: true, verguetung_ct_kwh: 7.86, keine_verguetung_bei_negativen_preisen: true, speicher_kwh: 0 },
   { uid: 2, type: 'direktvermarktung', name: 'Direktvermarktung', autoName: true,
-    abschlag_ct_kwh: 0.5, grundgebuehr_eur_monat: 5, einmalkosten_eur: 0, abschalten_bei_negativer_verguetung: true },
+    abschlag_ct_kwh: 0.5, grundgebuehr_eur_monat: 5, einmalkosten_eur: 0, abschalten_bei_negativer_verguetung: true, speicher_kwh: 0 },
+  // Gleiche Direktvermarktung mit fiktivem Speicher -- zeigt direkt, was ein Speicher bringen würde.
+  // autoName false: Der Name beschreibt den Speicher und soll beim Typwechsel nicht überschrieben werden.
+  { uid: 3, type: 'direktvermarktung', name: 'Direktvermarktung + Speicher', autoName: false,
+    abschlag_ct_kwh: 0.5, grundgebuehr_eur_monat: 5, einmalkosten_eur: 0, abschalten_bei_negativer_verguetung: true, speicher_kwh: 5 },
 ];
 let tariffUidCounter = Math.max(...tariffs.map((t) => t.uid));
 
@@ -379,6 +383,22 @@ function readGrundgebuehr(t) {
   return t.grundgebuehrJaehrlich ? value / 12 : value;
 }
 
+// Muss zu speicher_kwh in app/schemas.py passen (le=100).
+const STORAGE_MAX_KWH = 100;
+
+function storageFieldHtml(t) {
+  const eegHint = t.type === 'eeg'
+    ? ' Bei festem EEG-Satz bringt das nur mit „Keine Vergütung bei negativen Börsenpreisen“ etwas.'
+    : '';
+  return `
+    <label>Fiktiver Speicher (kWh)
+      ${numberInput(`tariff-${t.uid}-speicher`, t.speicher_kwh ?? 0)}
+      <span class="field-hint">0 = ohne Speicher. Lädt nur aus dem PV-Überschuss und speist zum
+        bestmöglichen Zeitpunkt ein (Leistung = halbe Kapazität je Stunde, 90 % Wirkungsgrad, alle Preise
+        im Voraus bekannt – also der höchstmögliche Mehrerlös).${eegHint}</span>
+    </label>`;
+}
+
 function eegFieldsHtml(t) {
   return `
     <label>Vergütungssatz netto (ct/kWh)
@@ -393,7 +413,8 @@ function eegFieldsHtml(t) {
       </span>
       <span class="field-hint">Gesetzliche Regel für neuere Anlagen (Solarspitzengesetz, Inbetriebnahme ab
         25.02.2025): In Viertelstunden mit negativem Börsenpreis entfällt die Vergütung.</span>
-    </label>`;
+    </label>
+    ${storageFieldHtml(t)}`;
 }
 
 function dvFieldsHtml(t) {
@@ -416,6 +437,7 @@ function dvFieldsHtml(t) {
       <span class="field-hint">Nicht einspeisen, sobald Börsenpreis − Abschlag unter 0 liegt (also auch bei
         Börsenpreisen knapp über 0) – dann gibt es weder Erlös noch Kosten.</span>
     </label>
+    ${storageFieldHtml(t)}
     <p class="tariff-preview">Erlös je Viertelstunde = Einspeisung × (Börsenpreis − Abschlag).
       Ohne Abschalten kostet Einspeisung Geld, wenn der Börsenpreis unter dem Abschlag liegt.</p>`;
 }
@@ -444,6 +466,7 @@ function tariffRowHtml(t) {
 // Rerender müssen die eingegebenen Werte zurück ins tariffs-Array, sonst gehen sie verloren.
 function syncTariffFromDom(t) {
   t.name = el(`tariff-${t.uid}-name`).value;
+  t.speicher_kwh = el(`tariff-${t.uid}-speicher`).value;
   if (t.type === 'eeg') {
     t.verguetung_ct_kwh = el(`tariff-${t.uid}-verguetung`).value;
     t.keine_verguetung_bei_negativen_preisen = el(`tariff-${t.uid}-negativ`).checked;
@@ -462,6 +485,7 @@ function syncTariffsFromDom() {
 // Fehlende Werte eines neuen oder umgestellten Tarifs ergänzen. Gebühren einer Direktvermarktung
 // kommen vom ersten anderen Direktvermarktungs-Tarif, damit meist nur der Abschlag anzupassen ist.
 function ensureDefaults(t) {
+  t.speicher_kwh ??= 0;
   if (t.type === 'eeg') {
     t.verguetung_ct_kwh ??= 7.86;
     t.keine_verguetung_bei_negativen_preisen ??= true;
@@ -543,6 +567,7 @@ function tariffPayload(t) {
       name,
       verguetung_ct_kwh: parseFloat(t.verguetung_ct_kwh),
       keine_verguetung_bei_negativen_preisen: Boolean(t.keine_verguetung_bei_negativen_preisen),
+      speicher_kwh: emptyAsZero(t.speicher_kwh),
     };
   }
   return {
@@ -552,6 +577,7 @@ function tariffPayload(t) {
     grundgebuehr_eur_monat: emptyAsZero(t.grundgebuehr_eur_monat),
     einmalkosten_eur: emptyAsZero(t.einmalkosten_eur),
     abschalten_bei_negativer_verguetung: Boolean(t.abschalten_bei_negativer_verguetung),
+    speicher_kwh: emptyAsZero(t.speicher_kwh),
   };
 }
 
@@ -577,11 +603,18 @@ el('btn-calculate').addEventListener('click', async () => {
       showError(`"${entry.name}": Werte dürfen nicht negativ sein.`);
       return;
     }
+    if (entry.speicher_kwh > STORAGE_MAX_KWH) {
+      showError(`"${entry.name}": Der Speicher darf höchstens ${STORAGE_MAX_KWH} kWh groß sein.`);
+      return;
+    }
     payloadTariffs.push(entry);
   }
 
   const btn = el('btn-calculate');
-  setButtonLoading(btn, true, 'Börsenpreise werden abgerufen und Erlöse berechnet…');
+  const withStorage = payloadTariffs.some((t) => t.speicher_kwh > 0);
+  setButtonLoading(btn, true, withStorage
+    ? 'Börsenpreise werden abgerufen, Speicher optimiert und Erlöse berechnet…'
+    : 'Börsenpreise werden abgerufen und Erlöse berechnet…');
   try {
     const data = await postJson('/api/calculate', { session_id: state.sessionId, tariffs: payloadTariffs });
     // Erst sichtbar machen, dann rendern: Chart.js misst beim Aufbau die Containergröße.
@@ -659,6 +692,7 @@ function renderDailyChartForGranularity() {
   }
   el('chart-month-tabs').hidden = chartGranularity !== 'day';
   el('chart-day-nav').hidden = chartGranularity !== 'slot';
+  if (chartGranularity !== 'slot') hideSocChart();
   el('chart-day-summary').hidden = chartGranularity !== 'slot';
   el('chart-drill-hint').hidden = chartGranularity === 'slot';
 
@@ -692,6 +726,7 @@ function dayCurveItems(detail) {
       label: counts[s.time] > 1 ? `${s.time} ${s.utc_offset_hours === 2 ? 'MESZ' : 'MEZ'}` : s.time,
       feed_in_kwh: s.feed_in_kwh,
       spot_ct_kwh: s.spot_ct_kwh,
+      soc: s.soc_kwh,
       revenues: s.revenue_eur,
     }));
   }
@@ -707,6 +742,7 @@ function dayCurveItems(detail) {
     const h = hours.get(key);
     h.feed_in_kwh += s.feed_in_kwh;
     if (s.spot_ct_kwh !== null) h.spots.push(s.spot_ct_kwh);
+    h.soc = s.soc_kwh; // Füllstand am Ende der Stunde = Füllstand der letzten Viertelstunde
     resultTariffNames.forEach((n) => { h.revenues[n] += s.revenue_eur[n]; });
   });
   const list = Array.from(hours.values());
@@ -716,6 +752,7 @@ function dayCurveItems(detail) {
     feed_in_kwh: h.feed_in_kwh,
     // Stundenpreis = Mittel der Viertelstundenpreise (vor 10/2025 ohnehin 4× derselbe Stundenpreis).
     spot_ct_kwh: h.spots.length ? h.spots.reduce((a, b) => a + b, 0) / h.spots.length : null,
+    soc: h.soc,
     revenues: h.revenues,
   }));
 }
@@ -748,7 +785,14 @@ async function renderDayCurve() {
     resultTariffNames.map((n) => `${escapeHtml(n)}: <strong>${formatEur(detail.totals_eur[n])}</strong>`).join(' · ') +
     ' (inkl. Gebühren-Anteil)';
   const items = dayCurveItems(detail);
+  // Speicherstand in % der Kapazität des jeweiligen Tarifs.
+  const capacities = Object.fromEntries(resultTariffs.map((t) => [t.name, t.storage_kwh]));
+  const storageNames = resultTariffNames.filter((n) => capacities[n] > 0);
+  items.forEach((it) => {
+    it.socPct = Object.fromEntries(storageNames.map((n) => [n, it.soc[n] == null ? null : (it.soc[n] / capacities[n]) * 100]));
+  });
   renderDailyChart(items, resultTariffNames, chartResolution, null, items.map((it) => it.spot_ct_kwh));
+  renderSocChart(items, storageNames, resultTariffNames, chartResolution);
 }
 
 function shiftChartDay(step) {
@@ -789,17 +833,23 @@ document.querySelectorAll('#chart-granularity-toggle .granularity-btn').forEach(
   });
 });
 
+function storageBreakdownHtml(t) {
+  if (!t.storage_kwh) return '';
+  return `<br>Speicher ${formatNum(t.storage_kwh, 1)} kWh: <strong>${formatSignedEur(t.storage_gain_eur)}</strong> Mehrerlös, ` +
+    `${formatNum(t.storage_discharged_kwh, 0)} kWh verschoben, ${formatNum(t.storage_cycles, 0)} Vollzyklen`;
+}
+
 function tariffBreakdownHtml(t) {
   if (t.type === 'eeg') {
     const lost = t.lost_negative_eur > 0
       ? `<br>entfallen bei negativen Preisen: ${formatEur(t.lost_negative_eur)}` : '';
-    return `Ø ${formatCt(t.avg_ct_kwh)}${lost}`;
+    return `Ø ${formatCt(t.avg_ct_kwh)}${lost}${storageBreakdownHtml(t)}`;
   }
   const curtailed = t.curtailed_kwh > 0
     ? `<br>abgeschaltet: ${formatNum(t.curtailed_kwh, 1)} kWh, ${formatEur(t.avoided_negative_eur)} Kosten vermieden` : '';
   return `Ø ${formatCt(t.avg_ct_kwh)} nach Gebühren<br>` +
     `Börse ${formatEur(t.energy_revenue_eur)} − Grundgebühr ${formatEur(t.base_fee_eur)}` +
-    (t.setup_eur > 0 ? ` − Einmalkosten ${formatEur(t.setup_eur)}` : '') + curtailed;
+    (t.setup_eur > 0 ? ` − Einmalkosten ${formatEur(t.setup_eur)}` : '') + curtailed + storageBreakdownHtml(t);
 }
 
 function renderResults(data) {
