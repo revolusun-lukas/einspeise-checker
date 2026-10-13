@@ -113,6 +113,7 @@ class TariffTotal(BaseModel):
 class DailyRevenue(BaseModel):
     date: str
     feed_in_kwh: float
+    spot_avg_ct_kwh: Optional[float]  # zeitlicher Ø-Börsenpreis des Tages, None = kein Preis
     revenues: dict[str, float]
 
 

@@ -138,6 +138,14 @@ def test_slots_without_price_are_excluded_for_all_tariffs():
     assert result["tariffs"][1]["total_eur"] == pytest.approx(0.10)
 
 
+def test_daily_spot_average_ignores_slots_without_price():
+    idx = pd.date_range("2026-06-01 10:00", periods=4, freq="15min", tz="UTC")
+    prices = pd.Series([40.0, np.nan, 80.0, -20.0], index=idx)
+    result, _ = calculate_revenue(pd.Series(1.0, index=idx), prices, [eeg(), dv()])
+    # (4 + 8 − 2) ct ÷ 3 Viertelstunden mit Preis
+    assert result["daily"][0]["spot_avg_ct_kwh"] == pytest.approx(10 / 3, abs=0.001)
+
+
 def test_duplicate_names_rejected():
     idx = pd.date_range("2026-06-01 10:00", periods=2, freq="15min", tz="UTC")
     with pytest.raises(ValueError):

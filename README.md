@@ -88,10 +88,9 @@ ersetzt werden.
 - Hinweis auf negative Preise: Anzahl der Viertelstunden, wie viele davon mit Einspeisung, kWh und Anteil.
 - Angabe, welche Preisauflösung verwendet wurde (siehe unten).
 - Erlös-Säulendiagramm mit Drill-down: Monate → Klick → Tage des Monats → Klick → Tagesverlauf aller Tarife
-  je Viertelstunde oder Stunde (mit Tageseinspeisung, Tag vor/zurück blättern).
+  je Viertelstunde oder Stunde (mit Tageseinspeisung, Tag vor/zurück blättern). In der Tagesansicht und im
+  Tagesverlauf zusätzlich der Börsenpreis als Linie (Tagesansicht: zeitlicher Ø des Tages).
 - Paarvergleich zweier anklickbarer Tarife: Mehrerlös, Differenz je kWh, gewonnene Tage/Monate, Profilfaktor.
-- Tagesvergleich mit dem besten Tag je Tarif und einer Viertelstunden-Analyse (Tageseinspeisung und
-  Tageserlöse, Charts und Tabelle).
 - Monatsbilanz des Paars: Differenz der Monatserlöse.
 
 ## Rechenmodell (`app/calculation/revenue.py`)

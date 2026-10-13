@@ -3,8 +3,7 @@
 
 const state = {
   sessionId: null,
-  comparePair: [], // die zwei im Ergebnis angeklickten Tarifnamen für Paar- und Tagesvergleich
-  compareDays: { a: null, b: null }, // Datum des besten Tages je Tarif des Paars
+  comparePair: [], // die zwei im Ergebnis angeklickten Tarifnamen für Paarvergleich und Monatsbilanz
   sampleData: false, // true = mitgelieferte Beispieldaten statt eigenem Upload
 };
 
@@ -22,7 +21,7 @@ function escapeHtml(value) {
 
 /* ---------- Wizard-Schritte (alle direkt auf der Seite, kein Popup -- iframe-tauglich) ---------- */
 
-const STEP_IDS = ['step-entry', 'modal-help', 'modal-mapping', 'modal-tariffs', 'modal-results', 'modal-day-detail'];
+const STEP_IDS = ['step-entry', 'modal-help', 'modal-mapping', 'modal-tariffs', 'modal-results'];
 
 function showStep(id) {
   STEP_IDS.forEach((s) => { el(s).hidden = (s !== id); });
@@ -280,7 +279,7 @@ const TYPE_LABELS = { eeg: 'EEG', direktvermarktung: 'Direktvermarktung' };
 let tariffs = [
   { uid: 1, type: 'eeg', name: 'EEG-Vergütung', autoName: true, verguetung_ct_kwh: 7.86, keine_verguetung_bei_negativen_preisen: true },
   { uid: 2, type: 'direktvermarktung', name: 'Direktvermarktung', autoName: true,
-    abschlag_ct_kwh: 0.5, grundgebuehr_eur_monat: 5, einmalkosten_eur: 100, abschalten_bei_negativer_verguetung: false },
+    abschlag_ct_kwh: 0.5, grundgebuehr_eur_monat: 5, einmalkosten_eur: 0, abschalten_bei_negativer_verguetung: true },
 ];
 let tariffUidCounter = Math.max(...tariffs.map((t) => t.uid));
 
@@ -335,6 +334,13 @@ function emptyAsZero(v) {
 function formatCt(value) {
   return `${value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ct/kWh`;
 }
+
+// Mausrad über einem fokussierten Zahlenfeld soll die Seite scrollen, nicht den Wert ändern.
+document.addEventListener('wheel', (e) => {
+  if (e.target instanceof HTMLInputElement && e.target.type === 'number' && e.target === document.activeElement) {
+    e.target.blur();
+  }
+}, { passive: true });
 
 function numberInput(id, value, { step = '0.01' } = {}) {
   return `<input type="number" id="${id}" step="${step}" min="0" value="${escapeHtml(value ?? '')}">`;
@@ -467,8 +473,8 @@ function ensureDefaults(t) {
     t.grundgebuehr_eur_monat = template ? template.grundgebuehr_eur_monat : 5;
     t.grundgebuehrJaehrlich = template ? Boolean(template.grundgebuehrJaehrlich) : false;
   }
-  t.einmalkosten_eur ??= template ? template.einmalkosten_eur : 100;
-  t.abschalten_bei_negativer_verguetung ??= template ? Boolean(template.abschalten_bei_negativer_verguetung) : false;
+  t.einmalkosten_eur ??= template ? template.einmalkosten_eur : 0;
+  t.abschalten_bei_negativer_verguetung ??= template ? Boolean(template.abschalten_bei_negativer_verguetung) : true;
 }
 
 function renderTariffList() {
@@ -606,10 +612,6 @@ function formatNum(value, digits) {
   return value.toLocaleString('de-DE', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-function formatOptionalNum(value, digits) {
-  return value === null || value === undefined ? '–' : formatNum(value, digits);
-}
-
 // Rohdaten der letzten Berechnung, damit der Erlös-Chart lokal zwischen Monat/Tag umschalten kann.
 let resultDailyRaw = [];
 let resultTariffNames = [];
@@ -674,7 +676,7 @@ function renderDailyChartForGranularity() {
     renderDailyChart(items, resultTariffNames, 'day', (i) => {
       selectedDayKey = items[i].date;
       setChartGranularity('slot');
-    });
+    }, items.map((d) => d.spot_avg_ct_kwh));
   } else {
     renderDayCurve();
   }
@@ -689,6 +691,7 @@ function dayCurveItems(detail) {
     return slots.map((s) => ({
       label: counts[s.time] > 1 ? `${s.time} ${s.utc_offset_hours === 2 ? 'MESZ' : 'MEZ'}` : s.time,
       feed_in_kwh: s.feed_in_kwh,
+      spot_ct_kwh: s.spot_ct_kwh,
       revenues: s.revenue_eur,
     }));
   }
@@ -696,10 +699,14 @@ function dayCurveItems(detail) {
   slots.forEach((s) => {
     const key = `${s.time.slice(0, 2)}|${s.utc_offset_hours}`;
     if (!hours.has(key)) {
-      hours.set(key, { hour: s.time.slice(0, 2), offset: s.utc_offset_hours, feed_in_kwh: 0, revenues: Object.fromEntries(resultTariffNames.map((n) => [n, 0])) });
+      hours.set(key, {
+        hour: s.time.slice(0, 2), offset: s.utc_offset_hours, feed_in_kwh: 0, spots: [],
+        revenues: Object.fromEntries(resultTariffNames.map((n) => [n, 0])),
+      });
     }
     const h = hours.get(key);
     h.feed_in_kwh += s.feed_in_kwh;
+    if (s.spot_ct_kwh !== null) h.spots.push(s.spot_ct_kwh);
     resultTariffNames.forEach((n) => { h.revenues[n] += s.revenue_eur[n]; });
   });
   const list = Array.from(hours.values());
@@ -707,6 +714,8 @@ function dayCurveItems(detail) {
   return list.map((h) => ({
     label: `${h.hour}:00${counts[h.hour] > 1 ? ` ${h.offset === 2 ? 'MESZ' : 'MEZ'}` : ''}`,
     feed_in_kwh: h.feed_in_kwh,
+    // Stundenpreis = Mittel der Viertelstundenpreise (vor 10/2025 ohnehin 4× derselbe Stundenpreis).
+    spot_ct_kwh: h.spots.length ? h.spots.reduce((a, b) => a + b, 0) / h.spots.length : null,
     revenues: h.revenues,
   }));
 }
@@ -738,7 +747,8 @@ async function renderDayCurve() {
     `Einspeisung an diesem Tag: <strong>${formatNum(detail.feed_in_kwh, 2)} kWh</strong> · ` +
     resultTariffNames.map((n) => `${escapeHtml(n)}: <strong>${formatEur(detail.totals_eur[n])}</strong>`).join(' · ') +
     ' (inkl. Gebühren-Anteil)';
-  renderDailyChart(dayCurveItems(detail), resultTariffNames, chartResolution);
+  const items = dayCurveItems(detail);
+  renderDailyChart(items, resultTariffNames, chartResolution, null, items.map((it) => it.spot_ct_kwh));
 }
 
 function shiftChartDay(step) {
@@ -874,40 +884,12 @@ function aggregateByMonth(daily, names) {
     .map(([monthKey, revenues]) => ({ date: monthKey, revenues }));
 }
 
-/* ---------- Tagesvergleich zweier frei gewählter Tarife ----------
-   Für das gewählte Paar A/B wird je Tarif der Tag gesucht, an dem er gegenüber dem anderen
-   den größten Mehrerlös hatte. */
+/* ---------- Auswahl des Tarifpaars für Paarvergleich und Monatsbilanz ---------- */
 
 function selectCompareTariff(name) {
   if (state.comparePair.includes(name)) return;
   state.comparePair = [state.comparePair[1], name];
   renderComparePair();
-}
-
-function bestDayFor(name, other) {
-  return resultDailyRaw.reduce((best, d) => {
-    const advantage = d.revenues[name] - d.revenues[other];
-    return !best || advantage > best.advantage ? { date: d.date, advantage, revenues: d.revenues } : best;
-  }, null);
-}
-
-function renderDayCompareItem(slot, name, other) {
-  const day = bestDayFor(name, other);
-  state.compareDays[slot] = day.date;
-  const nameSafe = escapeHtml(name);
-  const otherSafe = escapeHtml(other);
-
-  el(`day-${slot}-heading`).innerHTML = `Bester Tag für ${nameSafe}`;
-  // War der Tarif an keinem Tag (mind. 1 Cent) besser, gibt es keinen "besten Tag".
-  const neverBetter = day.advantage < 0.005;
-  el(`btn-day-${slot}-detail`).hidden = neverBetter;
-  if (neverBetter) {
-    el(`day-${slot}-title`).innerHTML = `${nameSafe} hat an keinem Tag mehr erlöst als ${otherSafe}.`;
-    return;
-  }
-  el(`day-${slot}-title`).innerHTML =
-    `${formatDateOnly(day.date)}: ${nameSafe} hat <span class="positive">${formatEur(day.advantage)} mehr</span> erlöst ` +
-    `als ${otherSafe} (${nameSafe}: ${formatEur(day.revenues[name])} · ${otherSafe}: ${formatEur(day.revenues[other])}, jeweils inkl. Gebühren)`;
 }
 
 function renderComparePair() {
@@ -917,9 +899,6 @@ function renderComparePair() {
     tile.classList.toggle('selected', selected);
     tile.setAttribute('aria-pressed', String(selected));
   });
-  el('day-compare-pair').innerHTML = pairBannerHtml(a, b);
-  renderDayCompareItem('a', a, b);
-  renderDayCompareItem('b', b, a);
   renderPairAnalysis();
 }
 
@@ -1022,112 +1001,6 @@ async function renderPairAnalysis() {
     if (requestId === pairAnalysisRequestId) showError(err.message);
   }
 }
-
-/* ---------- Viertelstunden-Analyse eines Tages ---------- */
-
-function renderDayDetailTable(detail, [a, b], titleHtml) {
-  const aSafe = escapeHtml(a);
-  const bSafe = escapeHtml(b);
-  // Je Tarif eine Spaltengruppe: Vergütung (ohne Gebühren), inkl. Gebühren-Anteil, Erlös.
-  const groups = [a, b].map((name) => ({ name, safe: escapeHtml(name), subtitle: TYPE_LABELS[resultTariffTypes[name]] }));
-  el('day-detail-title').innerHTML = titleHtml;
-  el('day-detail-kpis').innerHTML =
-    statTileHtml(
-      'Einspeisung an diesem Tag',
-      `${formatNum(detail.feed_in_kwh, 2)} kWh`,
-      `in ${detail.slots.filter((s) => s.feed_in_kwh > 0).length} Viertelstunden`,
-    ) +
-    groups.map((g) => {
-      const curtailed = detail.curtailed_kwh[g.name];
-      return statTileHtml(
-        `Erlös ${g.safe}`,
-        formatEur(detail.totals_eur[g.name]),
-        curtailed > 0 ? `davon ${formatNum(curtailed, 2)} kWh abgeschaltet` : '',
-      );
-    }).join('');
-
-  // Bei der Zeitumstellung gibt es eine Uhrzeit doppelt -- dann Sommer-/Winterzeit dazuschreiben.
-  const counts = detail.slots.reduce((acc, s) => ({ ...acc, [s.time]: (acc[s.time] || 0) + 1 }), {});
-  const timeLabel = (s) => (counts[s.time] > 1 ? `${s.time} (${s.utc_offset_hours === 2 ? 'MESZ' : 'MEZ'})` : s.time);
-
-  const header =
-    '<thead><tr><th rowspan="2">Zeit</th><th rowspan="2">Einspeisung</th><th rowspan="2">Börsenpreis<br>ct/kWh</th>' +
-    groups.map((g) => `<th colspan="3" class="group-head">${g.safe}<span class="group-sub">${g.subtitle}</span></th>`).join('') +
-    `<th rowspan="2">Vorteil<br>${aSafe}</th></tr><tr>` +
-    groups.map(() => '<th>Vergütung<br>ct/kWh</th><th>inkl. Gebühren*<br>ct/kWh</th><th>Erlös<br>€</th>').join('') +
-    '</tr></thead>';
-
-  const body =
-    '<tbody>' +
-    detail.slots
-      .map((s) => {
-        const advantage = s.revenue_eur[a] - s.revenue_eur[b];
-        const cells = groups.map((g) =>
-          (s.curtailed[g.name]
-            ? '<td class="curtailed" title="abgeschaltet, Börsenpreis − Abschlag unter 0">aus</td>'
-            : `<td>${formatOptionalNum(s.rates_ct_kwh[g.name], 2)}</td>`) +
-          `<td>${formatOptionalNum(s.net_rates_ct_kwh[g.name], 2)}</td><td>${formatNum(s.revenue_eur[g.name], 4)}</td>`,
-        ).join('');
-        const spotClass = s.spot_ct_kwh !== null && s.spot_ct_kwh < 0 ? ' class="negative"' : '';
-        return `<tr><td>${timeLabel(s)}</td><td>${formatNum(s.feed_in_kwh, 3)} kWh</td>` +
-          `<td${spotClass}>${formatOptionalNum(s.spot_ct_kwh, 2)}</td>${cells}` +
-          `<td class="${advantage >= 0 ? 'positive' : 'negative'}">${formatNum(advantage, 4)}</td></tr>`;
-      })
-      .join('') +
-    '</tbody>';
-
-  // Summenzeile: Vergütung als einspeisegewichteter Tagesdurchschnitt (Ø), Erlöse als Summe.
-  const kwh = detail.feed_in_kwh;
-  const weightedAvg = (key, name) => {
-    const slots = detail.slots.filter((s) => s[key][name] != null);
-    const slotKwh = slots.reduce((sum, s) => sum + s.feed_in_kwh, 0);
-    return slotKwh > 0 ? slots.reduce((sum, s) => sum + s[key][name] * s.feed_in_kwh, 0) / slotKwh : null;
-  };
-  const spotSlots = detail.slots.filter((s) => s.spot_ct_kwh != null);
-  const spotKwh = spotSlots.reduce((sum, s) => sum + s.feed_in_kwh, 0);
-  const spotAvg = spotKwh > 0 ? spotSlots.reduce((sum, s) => sum + s.spot_ct_kwh * s.feed_in_kwh, 0) / spotKwh : null;
-  const dayAdvantage = detail.totals_eur[a] - detail.totals_eur[b];
-  const footer =
-    `<tfoot><tr class="detail-sum"><td>Summe</td><td>${formatNum(kwh, 3)} kWh</td><td>Ø ${formatOptionalNum(spotAvg, 2)}</td>` +
-    groups.map((g) =>
-      `<td>Ø ${formatOptionalNum(weightedAvg('rates_ct_kwh', g.name), 2)}</td>` +
-      `<td>Ø ${formatOptionalNum(kwh > 0 ? (detail.totals_eur[g.name] / kwh) * 100 : null, 2)}</td>` +
-      `<td>${formatEur(detail.totals_eur[g.name])}</td>`,
-    ).join('') +
-    `<td class="${dayAdvantage >= 0 ? 'positive' : 'negative'}">${formatEur(dayAdvantage)}</td></tr></tfoot>`;
-
-  el('table-day-detail').innerHTML = header + body + footer;
-  el('day-detail-note').innerHTML =
-    '<strong>Vergütung</strong>: EEG-Satz bzw. Börsenpreis − Abschlag, ohne Grundgebühr. ' +
-    '<strong>* inkl. Gebühren</strong>: Vergütung abzüglich Grundgebühr- und Einmalkosten-Anteil (Monatsgebühr ÷ Monatseinspeisung). ' +
-    '<strong>Erlös</strong>: Erlös der Viertelstunde inkl. Gebühren-Anteil. ' +
-    '<strong>aus</strong>: abgeschaltet, weil Börsenpreis − Abschlag unter 0 lag – keine Einspeisung, Vergütung 0. ' +
-    `<strong>Vorteil ${aSafe}</strong>: Erlös ${aSafe} − Erlös ${bSafe} (positiv = ${aSafe} besser). Ø-Werte einspeisegewichtet.`;
-}
-
-async function openDayDetail(slot) {
-  // Der Tarif, dessen bester Tag angezeigt wird, steht in der Tabelle vorne.
-  const [a, b] = state.comparePair;
-  const pair = slot === 'a' ? [a, b] : [b, a];
-  const btn = el(`btn-day-${slot}-detail`);
-  const titleHtml = el(`day-${slot}-title`).innerHTML;
-  clearError();
-  btn.disabled = true;
-  try {
-    const detail = await postJson('/api/day-detail', { session_id: state.sessionId, date: state.compareDays[slot], tariff_names: pair });
-    renderDayDetailTable(detail, pair, titleHtml);
-    // Erst sichtbar machen, dann Charts bauen (Chart.js misst die Containergröße).
-    showStep('modal-day-detail');
-    renderDayCharts(detail, chartPair(pair));
-  } catch (err) {
-    showError(err.message);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-el('btn-day-a-detail').addEventListener('click', () => openDayDetail('a'));
-el('btn-day-b-detail').addEventListener('click', () => openDayDetail('b'));
 
 el('btn-restart').addEventListener('click', () => {
   window.location.reload();
