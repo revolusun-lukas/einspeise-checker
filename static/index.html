@@ -48,6 +48,14 @@
       <input type="file" id="csv-file" accept=".csv,text/csv" disabled>
       <button id="btn-upload" class="btn btn-primary" disabled title="Bitte zuerst der Datennutzung zustimmen">Hochladen</button>
     </div>
+
+    <div class="sample-box">
+      <p class="hint">
+        <strong>Keine eigenen Daten zur Hand?</strong> Dann mit den Beispieldaten einer PV-Anlage mit
+        Batteriespeicher ausprobieren: Netzeinspeisung des ganzen Jahres 2025 in Viertelstunden.
+      </p>
+      <button type="button" id="btn-sample-data" class="btn btn-secondary">Mit Beispieldaten ausprobieren</button>
+    </div>
   </section>
 
   <section id="modal-help" class="card" tabindex="-1" hidden>
@@ -175,7 +183,7 @@
         <div class="summary-hero-value" id="summary-total-kwh">–</div>
         <div class="summary-hero-meta" id="summary-meta">–</div>
       </div>
-      <p class="summary-check-hint">
+      <p class="summary-check-hint" id="summary-check-hint">
         <strong>Bitte prüfen:</strong> Vergleiche diesen Wert mit der Einspeisung laut Zähler bzw.
         Abrechnung des Netzbetreibers für denselben Zeitraum. Wirkt er nicht plausibel, eine andere
         Spalte, Richtung oder Bedeutung wählen.
@@ -244,37 +252,41 @@
 
     <div id="negative-price-note" class="warnings" hidden></div>
 
+    <div class="result-block">
+      <div class="chart-header">
+        <h3>Erlöse im Vergleich</h3>
+        <div class="granularity-toggle" id="chart-granularity-toggle">
+          <button type="button" class="granularity-btn active" data-granularity="month">Monat</button>
+          <button type="button" class="granularity-btn" data-granularity="day">Tag</button>
+          <button type="button" class="granularity-btn" data-granularity="slot">Tagesverlauf</button>
+        </div>
+      </div>
+      <p class="hint" id="chart-drill-hint">Auf einen Balken klicken, um tiefer einzusteigen: Monat → Tage des Monats → Tagesverlauf.</p>
+      <div class="month-tabs" id="chart-month-tabs" hidden></div>
+      <div class="chart-day-nav" id="chart-day-nav" hidden>
+        <button type="button" class="month-tab-btn" id="btn-chart-day-prev" aria-label="Vorheriger Tag">‹</button>
+        <strong id="chart-day-label"></strong>
+        <button type="button" class="month-tab-btn" id="btn-chart-day-next" aria-label="Nächster Tag">›</button>
+        <button type="button" class="month-tab-btn" id="btn-chart-day-month">↑ ganzer Monat</button>
+        <div class="granularity-toggle" id="chart-resolution-toggle">
+          <button type="button" class="granularity-btn active" data-resolution="quarter">15 Min</button>
+          <button type="button" class="granularity-btn" data-resolution="hour">Stunde</button>
+        </div>
+      </div>
+      <p class="hint" id="chart-day-summary" hidden></p>
+      <div class="chart-legend" id="legend-daily"></div>
+      <div class="chart-scroll">
+        <div class="chart-canvas-wrap" id="chart-daily-wrap">
+          <canvas id="chart-daily"></canvas>
+        </div>
+      </div>
+    </div>
+
     <div class="result-block" id="pair-analysis">
       <h3>Paarvergleich über den gesamten Zeitraum</h3>
       <div class="pair-banner" id="pair-title"></div>
       <p class="hint pair-banner-hint">Anderes Paar? Oben einfach eine andere Tarifkachel anklicken.</p>
       <div class="stat-grid" id="pair-kpis"></div>
-
-      <h4 class="pair-subhead">Monatsbilanz</h4>
-      <p class="hint">Differenz der Monatserlöse (inkl. Gebühren); die Farbe zeigt, welcher Tarif im Monat mehr erlöst hat.</p>
-      <div class="chart-legend" id="legend-pair-months"></div>
-      <div class="chart-canvas-wrap pair-chart"><canvas id="chart-pair-months"></canvas></div>
-
-      <div class="avg-profile">
-        <p class="avg-profile-badge">Ø Durchschnittstag <span id="pair-period"></span></p>
-        <p class="hint">
-          Die folgenden Schaubilder zeigen <strong>keinen einzelnen Tag</strong>, sondern einen
-          gemittelten „Durchschnittstag“: Jeder Wert ist der Mittelwert aller Tage im Zeitraum zur
-          jeweiligen Viertelstunde (z.B. 12:15 = Durchschnitt aller 12:15-Viertelstunden).
-        </p>
-
-        <!-- Nur sichtbar, wenn mindestens eine Direktvermarktung im Paar ist (EEG allein: flache Linien). -->
-        <div id="pair-prices-section">
-          <h4 class="pair-subhead">Ø Vergütung je Uhrzeit</h4>
-          <p class="hint">Ohne Grundgebühr. Bei der Direktvermarktung Börsenpreis − Abschlag: zeigt, zu welchen Uhrzeiten Strom im Schnitt viel oder wenig wert war.</p>
-          <div class="chart-legend" id="legend-pair-prices"></div>
-          <div class="chart-canvas-wrap pair-chart"><canvas id="chart-pair-prices"></canvas></div>
-        </div>
-
-        <h4 class="pair-subhead">Ø Einspeisung je Uhrzeit</h4>
-        <p class="hint">Wie viel du im Schnitt pro Tag in dieser Viertelstunde eingespeist hast. Liegen die hohen Balken dort, wo die Vergütungskurve oben niedrig ist, verliert die Direktvermarktung.</p>
-        <div class="chart-canvas-wrap pair-chart"><canvas id="chart-pair-feed-in"></canvas></div>
-      </div>
     </div>
 
     <div class="result-block">
@@ -295,20 +307,11 @@
     </div>
 
     <div class="result-block">
-      <div class="chart-header">
-        <h3>Erlöse im Vergleich</h3>
-        <div class="granularity-toggle" id="chart-granularity-toggle">
-          <button type="button" class="granularity-btn active" data-granularity="month">Monat</button>
-          <button type="button" class="granularity-btn" data-granularity="day">Tag</button>
-        </div>
-      </div>
-      <div class="month-tabs" id="chart-month-tabs" hidden></div>
-      <div class="chart-legend" id="legend-daily"></div>
-      <div class="chart-scroll">
-        <div class="chart-canvas-wrap" id="chart-daily-wrap">
-          <canvas id="chart-daily"></canvas>
-        </div>
-      </div>
+      <h3>Monatsbilanz</h3>
+      <div class="pair-banner" id="month-balance-pair"></div>
+      <p class="hint">Differenz der Monatserlöse (inkl. Gebühren); die Farbe zeigt, welcher Tarif im Monat mehr erlöst hat.</p>
+      <div class="chart-legend" id="legend-pair-months"></div>
+      <div class="chart-canvas-wrap pair-chart"><canvas id="chart-pair-months"></canvas></div>
     </div>
 
     <button id="btn-restart" class="btn btn-secondary">Neuen Import starten</button>
@@ -318,6 +321,7 @@
     <button type="button" class="btn-back" data-back-to="modal-results">&larr; Zurück zum Ergebnis</button>
     <h2>Viertelstunden-Analyse</h2>
     <p class="day-detail-summary" id="day-detail-title"></p>
+    <div class="stat-grid" id="day-detail-kpis"></div>
 
     <h4 class="pair-subhead">Bilanz je Viertelstunde</h4>
     <p class="hint">Erlösdifferenz je Viertelstunde an diesem Tag (inkl. Gebühren-Anteil); die Farbe zeigt, welcher Tarif mehr erlöst hat.</p>

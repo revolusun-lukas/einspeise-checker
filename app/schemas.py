@@ -82,6 +82,8 @@ class DirectMarketingTariffInput(BaseModel):
     grundgebuehr_eur_monat: float = Field(ge=0, le=500)
     # Einmalig (z.B. Smart Meter), wird wie im Tarifcheck aufs erste Jahr verteilt.
     einmalkosten_eur: float = Field(ge=0, le=10000, default=0)
+    # Anlage speist nicht ein, wenn Börsenpreis − Abschlag < 0.
+    abschalten_bei_negativer_verguetung: bool = False
 
 
 TariffInput = Annotated[Union[EegTariffInput, DirectMarketingTariffInput], Field(discriminator="type")]
@@ -100,6 +102,8 @@ class TariffTotal(BaseModel):
     base_fee_eur: float
     setup_eur: float
     lost_negative_eur: float
+    curtailed_kwh: float  # durch Abschalten nicht eingespeist
+    avoided_negative_eur: float  # dadurch vermiedene Kosten
     feed_in_kwh: float
     avg_ct_kwh: float
     energy_avg_ct_kwh: float
@@ -151,13 +155,15 @@ class CalculateResponse(BaseModel):
 class DayDetailRequest(BaseModel):
     session_id: str
     date: date
-    tariff_names: list[str] = Field(min_length=2, max_length=2)
+    # 2 für die Viertelstunden-Analyse eines Paars, alle Tarife für den Tagesverlauf im Erlös-Chart.
+    tariff_names: list[str] = Field(min_length=1, max_length=8)
 
 
 class DaySlotDetail(BaseModel):
     time: str
     utc_offset_hours: float
-    feed_in_kwh: float
+    feed_in_kwh: float  # gemessen
+    curtailed: dict[str, bool]  # Tarif hat in dieser Viertelstunde abgeschaltet
     spot_ct_kwh: Optional[float]  # None = kein Börsenpreis
     rates_ct_kwh: dict[str, Optional[float]]
     net_rates_ct_kwh: dict[str, Optional[float]]
@@ -167,6 +173,7 @@ class DaySlotDetail(BaseModel):
 class DayDetailResponse(BaseModel):
     date: str
     feed_in_kwh: float
+    curtailed_kwh: dict[str, float]
     totals_eur: dict[str, float]
     slots: list[DaySlotDetail]
 
@@ -182,15 +189,5 @@ class TariffProfile(BaseModel):
     profile_factor_ct_kwh: Optional[float]
 
 
-class SlotOfDayStats(BaseModel):
-    time: str
-    feed_in_kwh: float
-    avg_feed_in_kwh: float
-    feed_in_share: float
-    avg_rate_ct_kwh: dict[str, Optional[float]]
-    revenue_eur: dict[str, float]
-
-
 class PairAnalysisResponse(BaseModel):
     profile: dict[str, TariffProfile]
-    slots: list[SlotOfDayStats]

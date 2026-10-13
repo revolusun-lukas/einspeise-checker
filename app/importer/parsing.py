@@ -287,6 +287,8 @@ FEED_IN_NAME_HINTS = [
     "rueckspeis", "erzeugung",
 ]
 GRID_NAME_HINTS = ["active energy", "act_energy", "bezug", "import", "consumption", "verbrauch", "purchase"]
+# Teil-/Eigenverbrauch ist kein Netzbezug -- z.B. "Direktverbrauch [W]" in Wechselrichter-Exporten.
+GRID_EXCLUDE_HINTS = ["direkt", "direct", "eigen", "self", "batterie", "battery", "produktion", "production"]
 
 
 def _has_feed_in_hint(col_name: str) -> bool:
@@ -325,7 +327,11 @@ def suggest_grid_column(df: pd.DataFrame, exclude: list[str]) -> Optional[str]:
     """Optionale Bezugsspalte (z.B. Shelly "Active energy"), nur bei eindeutigem Namen."""
     for col in _numeric_candidates(df, exclude=exclude):
         name = col.lower()
-        if not _has_feed_in_hint(col) and any(h in name for h in GRID_NAME_HINTS):
+        if (
+            not _has_feed_in_hint(col)
+            and any(h in name for h in GRID_NAME_HINTS)
+            and not any(h in name for h in GRID_EXCLUDE_HINTS)
+        ):
             return col
     return None
 

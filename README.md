@@ -39,6 +39,11 @@ pytest
 Gebraucht wird ein CSV-Export eines Smartmeters oder Energiemessgeräts. Vor dem Upload muss der
 Datennutzung zugestimmt werden.
 
+Ohne eigene Daten geht es mit **„Mit Beispieldaten ausprobieren“**: Netzeinspeisung einer PV-Anlage mit
+Batteriespeicher für das ganze Jahr 2025 in Viertelstunden (`static/sample/beispiel-einspeisung-2025.csv`,
+rund 5.300 kWh). Die Datei durchläuft denselben Import wie ein Upload. Die automatischen Vorschläge passen
+(geprüft in `tests/test_importer.py`), deshalb geht es direkt weiter zu den Tarifen.
+
 ### 2. Spaltenzuordnung prüfen
 
 Die Anwendung schlägt Zeitstempel-Spalte, Einspeise-Spalte, Richtung, Bedeutung und Zeitzone
@@ -70,7 +75,8 @@ Kleinunternehmer.
   Börsenpreisen“: die gesetzliche Regel für neuere Anlagen (Solarspitzengesetz, Inbetriebnahme ab
   25.02.2025), angewendet je Viertelstunde.
 - **Direktvermarktung**: Abschlag (ct/kWh), Grundgebühr (€/Monat, wahlweise als Jahresbetrag
-  eingegeben) und Einmalkosten (€, z. B. Smart Meter).
+  eingegeben) und Einmalkosten (€, z. B. Smart Meter). Optional „Abschalten bei negativer
+  Vergütung“: Nicht einspeisen, sobald Börsenpreis − Abschlag unter 0 liegt.
 
 Die vorbelegten Werte sind Beispiele und sollten durch das eigene Angebot bzw. die eigene Abrechnung
 ersetzt werden.
@@ -81,10 +87,12 @@ ersetzt werden.
 - „Marktwert“ der Einspeisung: der einspeisegewichtete Ø-Börsenpreis im Vergleich zum zeitlichen Ø.
 - Hinweis auf negative Preise: Anzahl der Viertelstunden, wie viele davon mit Einspeisung, kWh und Anteil.
 - Angabe, welche Preisauflösung verwendet wurde (siehe unten).
-- Paarvergleich zweier anklickbarer Tarife: Monatsbilanz, Profilfaktor, Ø-Durchschnittstag je
-  Viertelstunde (Vergütung und Einspeisung).
-- Tagesvergleich mit dem besten Tag je Tarif und einer Viertelstunden-Analyse (Charts und Tabelle).
-- Erlös-Säulendiagramm nach Monat oder Tag.
+- Erlös-Säulendiagramm mit Drill-down: Monate → Klick → Tage des Monats → Klick → Tagesverlauf aller Tarife
+  je Viertelstunde oder Stunde (mit Tageseinspeisung, Tag vor/zurück blättern).
+- Paarvergleich zweier anklickbarer Tarife: Mehrerlös, Differenz je kWh, gewonnene Tage/Monate, Profilfaktor.
+- Tagesvergleich mit dem besten Tag je Tarif und einer Viertelstunden-Analyse (Tageseinspeisung und
+  Tageserlöse, Charts und Tabelle).
+- Monatsbilanz des Paars: Differenz der Monatserlöse.
 
 ## Rechenmodell (`app/calculation/revenue.py`)
 
@@ -97,7 +105,12 @@ Direktvermarktung: Erlös(q) = Einspeisung(q) × (Börsenpreis(q) − Abschlag)
                               − Grundgebühr-Anteil(q) − Einmalkosten-Anteil(q)
 ```
 
-- Es wird **nicht abgeschaltet**. Bei negativem Preis kostet die Einspeisung in der Direktvermarktung Geld.
+- Ohne Abschalten kostet die Einspeisung in der Direktvermarktung Geld, sobald der Börsenpreis unter dem
+  Abschlag liegt. Mit **Abschalten bei negativer Vergütung** sind Einspeisung und Vergütung des Tarifs
+  dann 0 (Bedingung: Börsenpreis − Abschlag < 0, also auch bei Börsenpreisen knapp über 0). Abgeschaltete
+  Viertelstunden tragen keinen Gebühren-Anteil; ausgewiesen werden die abgeschaltete Menge und die
+  dadurch vermiedenen Kosten. Die gemessene
+  Einspeisung (Tageswerte, Tagesdetail) bleibt unverändert.
 - Die **Grundgebühr** wird je Kalendermonat proportional zur Einspeisung des Monats verteilt. Das ist
   `_base_fee_weights` aus dem Tarifcheck. Angebrochene Monate zahlen nur ihren zeitlichen Anteil,
   Monate ohne Einspeisung verteilen den Betrag gleichmäßig.
@@ -145,6 +158,7 @@ app/
     import_routes.py     POST /api/import/upload, /api/import/confirm
     calculate_routes.py  POST /api/calculate, /api/day-detail, /api/pair-analysis
 static/                  index.html, css/style.css, js/app.js, js/charts.js, vendor/chart.umd.min.js
+  sample/                Beispieldaten (Einspeisung 2025) für „Mit Beispieldaten ausprobieren“
 tests/                   pytest, inkl. Shelly-EM-Beispiel-CSV (synthetisch) unter tests/fixtures/
 Dockerfile, render.yaml  Deployment auf Render
 ```
@@ -173,7 +187,5 @@ Höhe per `postMessage` mit `source: 'einspeise-checker'`:
 
 ## Später (vorbereitet, noch nicht umgesetzt)
 
-- **Abschalten bei negativem Gewinn**: Einspeisung = 0, wenn Börsenpreis − Abschlag < 0.
-  `CalculationDetail.feed_in_kwh` führt die Einspeisung bereits je Tarif.
 - **HEMS-Slider / virtueller Speicher**: Dafür werden Bezug und Einspeisung gebraucht. Der Importer
   liest den Bezug schon optional ein (`Session.grid_kwh`).
