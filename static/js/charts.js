@@ -53,14 +53,39 @@ function quarterHourScale() {
   };
 }
 
-function renderLegend(elementId, names) {
-  const el = document.getElementById(elementId);
-  el.innerHTML = names
-    .map(
-      (name, i) =>
-        `<span class="legend-item"><span class="legend-swatch" style="background:${seriesColor(i)}"></span>${escapeHtml(name)}</span>`
-    )
-    .join('');
+/* Klickbare Legenden: Ein Eintrag blendet die zugehörige Reihe (Dataset-Index) aus und wieder ein.
+   Ausgeblendete Reihen werden je Diagramm über ihr Dataset-Label gemerkt -- so bleibt die Auswahl beim
+   Blättern zwischen Tagen und beim Wechsel Monat/Tag/Tagesverlauf erhalten. */
+const hiddenSeries = { daily: new Set(), soc: new Set() };
+
+const swatchMarker = (color) => `<span class="legend-swatch" style="background:${color}"></span>`;
+const lineMarker = (color) => `<span class="legend-line" style="background:${color}"></span>`;
+
+function legendToggleHtml(datasetIndex, text, marker) {
+  return `<button type="button" class="legend-item legend-toggle" data-index="${datasetIndex}" aria-pressed="true" ` +
+    `title="Ein-/ausblenden">${marker}${escapeHtml(text)}</button>`;
+}
+
+function bindLegendToggles(legendId, chart, key) {
+  const hidden = hiddenSeries[key];
+  document.getElementById(legendId).querySelectorAll('.legend-toggle').forEach((btn) => {
+    const index = Number(btn.dataset.index);
+    const label = chart.data.datasets[index].label;
+    const apply = () => {
+      const isHidden = hidden.has(label);
+      chart.setDatasetVisibility(index, !isHidden);
+      btn.classList.toggle('is-off', isHidden);
+      btn.setAttribute('aria-pressed', String(!isHidden));
+    };
+    apply();
+    btn.addEventListener('click', () => {
+      if (hidden.has(label)) hidden.delete(label);
+      else hidden.add(label);
+      apply();
+      chart.update();
+    });
+  });
+  chart.update('none');
 }
 
 
@@ -194,13 +219,10 @@ function alignedZeroRanges(valuesA, valuesB) {
 }
 
 function renderDailyChart(items, tariffNames, granularity, onBarClick = null, spotValues = null) {
-  renderLegend('legend-daily', tariffNames);
-  if (spotValues) {
-    document.getElementById('legend-daily').insertAdjacentHTML(
-      'beforeend',
-      `<span class="legend-item"><span class="legend-line" style="background:${cssVar('--text-primary')}"></span>Börsenpreis (ct/kWh, rechte Achse)</span>`,
-    );
-  }
+  // Reihenfolge wie die Datasets unten: erst die Tarife, dann der Börsenpreis.
+  document.getElementById('legend-daily').innerHTML =
+    tariffNames.map((name, i) => legendToggleHtml(i, name, swatchMarker(seriesColor(i)))).join('') +
+    (spotValues ? legendToggleHtml(tariffNames.length, 'Börsenpreis (ct/kWh, rechte Achse)', lineMarker(cssVar('--text-primary'))) : '');
 
   if (dailyChartInstance) {
     dailyChartInstance.destroy();
@@ -321,6 +343,7 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null, sp
       },
     },
   });
+  bindLegendToggles('legend-daily', dailyChartInstance, 'daily');
 }
 
 function hideSocChart() {
@@ -331,50 +354,88 @@ function hideSocChart() {
   document.getElementById('chart-soc-block').hidden = true;
 }
 
-/* Speicherstand in % je Tarif mit fiktivem Speicher (Tagesverlauf). items wie beim Erlös-Diagramm
-   ({label, socPct: {tarif: % | null}}); storageNames = Tarife mit Speicher, colorIndex je Tarif aus
-   der Tarifliste, damit die Linie dieselbe Farbe hat wie die Erlös-Balken. */
+/* Speicherstand und Netzeinspeisung im Tagesverlauf, nur für Tarife mit fiktivem Speicher.
+   items wie beim Erlös-Diagramm ({label, feed_in_kwh, socPct: {tarif: %}, grid: {tarif: kWh}});
+   colorIndex je Tarif aus der Tarifliste, damit Linie und Balken dieselbe Farbe haben wie die Erlös-Balken.
+   Linie = Speicherstand in % (links), Balken = gemessener PV-Überschuss (grau) und Netzeinspeisung des
+   Tarifs (farbig) in kWh (rechts). */
 function renderSocChart(items, storageNames, tariffNames, granularity) {
   if (!storageNames.length) {
     hideSocChart();
     return;
   }
   document.getElementById('chart-soc-block').hidden = false;
-  document.getElementById('legend-soc').innerHTML = storageNames
-    .map((name) => `<span class="legend-item"><span class="legend-line" style="background:${seriesColor(tariffNames.indexOf(name))}"></span>${escapeHtml(name)}</span>`)
-    .join('');
+  const color = (name) => seriesColor(tariffNames.indexOf(name));
+  // Balken halbtransparent, damit die Speicherstand-Linie davor lesbar bleibt (#rrggbb + Alpha).
+  const barColor = (name) => `${color(name)}99`;
+  // Reihenfolge wie die Datasets unten: Speicherstand-Linien, PV-Überschuss, Netzeinspeisung je Tarif.
+  const k = storageNames.length;
+  document.getElementById('legend-soc').innerHTML =
+    storageNames.map((name, i) => legendToggleHtml(i, `Speicherstand ${name}`, lineMarker(color(name)))).join('') +
+    legendToggleHtml(k, 'PV-Überschuss (gemessen)', swatchMarker(cssVar('--text-muted'))) +
+    storageNames.map((name, i) => legendToggleHtml(k + 1 + i, `Netzeinspeisung ${name}`, swatchMarker(barColor(name)))).join('');
   if (socChartInstance) socChartInstance.destroy();
 
+  const unit = granularity === 'quarter' ? 'kWh / Viertelstunde' : 'kWh / Stunde';
   const xScale = granularity === 'quarter'
     ? quarterHourScale()
     : { ...commonScaleOptions(), ticks: { ...commonScaleOptions().ticks, maxRotation: 0 } };
-  socChartInstance = new Chart(document.getElementById('chart-soc').getContext('2d'), {
-    type: 'line',
-    data: {
-      labels: items.map((it) => it.label),
-      datasets: storageNames.map((name) => ({
-        label: name,
-        data: items.map((it) => it.socPct[name]),
-        borderColor: seriesColor(tariffNames.indexOf(name)),
-        backgroundColor: seriesColor(tariffNames.indexOf(name)),
-        borderWidth: 2,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        tension: 0,
-      })),
+  const datasets = [
+    // order 0 = vorne: Linien über den Balken.
+    ...storageNames.map((name) => ({
+      type: 'line',
+      label: `Speicherstand ${name}`,
+      data: items.map((it) => it.socPct[name]),
+      yAxisID: 'y',
+      borderColor: color(name),
+      backgroundColor: color(name),
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0,
+      order: 0,
+    })),
+    {
+      type: 'bar',
+      label: 'PV-Überschuss (gemessen)',
+      data: items.map((it) => it.feed_in_kwh),
+      yAxisID: 'yKwh',
+      backgroundColor: cssVar('--text-muted'),
+      categoryPercentage: 0.9,
+      barPercentage: 0.9,
+      order: 1,
     },
+    ...storageNames.map((name) => ({
+      type: 'bar',
+      label: `Netzeinspeisung ${name}`,
+      data: items.map((it) => it.grid[name]),
+      yAxisID: 'yKwh',
+      backgroundColor: barColor(name),
+      categoryPercentage: 0.9,
+      barPercentage: 0.9,
+      order: 1,
+    })),
+  ];
+
+  socChartInstance = new Chart(document.getElementById('chart-soc').getContext('2d'), {
+    type: 'bar',
+    data: { labels: items.map((it) => it.label), datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${formatDe(c.parsed.y, 0)} %` } },
+        tooltip: {
+          callbacks: {
+            label: (c) => (c.dataset.yAxisID === 'y'
+              ? `${c.dataset.label}: ${formatDe(c.parsed.y, 0)} %`
+              : `${c.dataset.label}: ${formatDe(c.parsed.y, 3)} kWh`),
+          },
+        },
       },
-      // Wie im Erlös-Diagramm: Balken-Kategorien sind mittig versetzt -- sonst stünden die Punkte
-      // nicht unter den zugehörigen Balken.
       scales: {
-        x: { ...xScale, offset: true },
+        x: xScale,
         y: {
           ...commonScaleOptions(),
           min: 0,
@@ -382,16 +443,18 @@ function renderSocChart(items, storageNames, tariffNames, granularity) {
           ticks: { ...commonScaleOptions().ticks, stepSize: 50, callback: (v) => `${v} %` },
           afterFit: fixAxisWidth,
         },
-        // Leere rechte Achse in derselben Breite wie die Börsenpreis-Achse darüber.
-        yRight: {
+        // Rechts in derselben Breite wie die Börsenpreis-Achse darüber -- Zeitachsen bleiben bündig.
+        yKwh: {
+          ...commonScaleOptions(),
           position: 'right',
-          display: true,
-          grid: { drawOnChartArea: false, drawTicks: false },
-          border: { display: false },
-          ticks: { display: false },
+          beginAtZero: true,
+          grid: { drawOnChartArea: false },
+          ticks: { ...commonScaleOptions().ticks, callback: (v) => v.toLocaleString('de-DE', { maximumFractionDigits: 2 }) },
+          title: { display: true, text: unit, color: cssVar('--text-secondary') },
           afterFit: fixAxisWidth,
         },
       },
     },
   });
+  bindLegendToggles('legend-soc', socChartInstance, 'soc');
 }

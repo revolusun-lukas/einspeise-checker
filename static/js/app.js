@@ -727,6 +727,7 @@ function dayCurveItems(detail) {
       feed_in_kwh: s.feed_in_kwh,
       spot_ct_kwh: s.spot_ct_kwh,
       soc: s.soc_kwh,
+      grid: s.grid_feed_in_kwh,
       revenues: s.revenue_eur,
     }));
   }
@@ -737,13 +738,17 @@ function dayCurveItems(detail) {
       hours.set(key, {
         hour: s.time.slice(0, 2), offset: s.utc_offset_hours, feed_in_kwh: 0, spots: [],
         revenues: Object.fromEntries(resultTariffNames.map((n) => [n, 0])),
+        grid: Object.fromEntries(resultTariffNames.map((n) => [n, 0])),
       });
     }
     const h = hours.get(key);
     h.feed_in_kwh += s.feed_in_kwh;
     if (s.spot_ct_kwh !== null) h.spots.push(s.spot_ct_kwh);
     h.soc = s.soc_kwh; // Füllstand am Ende der Stunde = Füllstand der letzten Viertelstunde
-    resultTariffNames.forEach((n) => { h.revenues[n] += s.revenue_eur[n]; });
+    resultTariffNames.forEach((n) => {
+      h.revenues[n] += s.revenue_eur[n];
+      h.grid[n] += s.grid_feed_in_kwh[n];
+    });
   });
   const list = Array.from(hours.values());
   const counts = list.reduce((acc, h) => ({ ...acc, [h.hour]: (acc[h.hour] || 0) + 1 }), {});
@@ -753,6 +758,7 @@ function dayCurveItems(detail) {
     // Stundenpreis = Mittel der Viertelstundenpreise (vor 10/2025 ohnehin 4× derselbe Stundenpreis).
     spot_ct_kwh: h.spots.length ? h.spots.reduce((a, b) => a + b, 0) / h.spots.length : null,
     soc: h.soc,
+    grid: h.grid,
     revenues: h.revenues,
   }));
 }

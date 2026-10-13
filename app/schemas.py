@@ -173,6 +173,7 @@ class DaySlotDetail(BaseModel):
     time: str
     utc_offset_hours: float
     feed_in_kwh: float  # gemessen
+    grid_feed_in_kwh: dict[str, float]  # Netzeinspeisung je Tarif (nach Abschalten und Speicher)
     curtailed: dict[str, bool]  # Tarif hat in dieser Viertelstunde abgeschaltet
     soc_kwh: dict[str, Optional[float]]  # Füllstand des fiktiven Speichers, None = kein Speicher
     spot_ct_kwh: Optional[float]  # None = kein Börsenpreis

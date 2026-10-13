@@ -86,14 +86,16 @@ ersetzt werden.
 
 - Erlös je Tarif nach Abzug aller Gebühren, Differenz zum besten Tarif, Ø-Erlös in ct/kWh und Einspeisemenge.
   Mit Speicher zusätzlich Mehrerlös ggü. demselben Tarif ohne Speicher, verschobene kWh und Vollzyklen;
-  im Tagesverlauf darunter ein Diagramm „Speicherstand“ (% der Kapazität je Tarif, Zeitachse bündig mit
-  dem Erlös-Diagramm); der Tooltip nennt den Stand in % und kWh.
+  im Tagesverlauf darunter ein Diagramm „Speicherstand und Netzeinspeisung“: Speicherstand in % der
+  Kapazität (Linie), gemessener PV-Überschuss und tatsächliche Netzeinspeisung des Tarifs in kWh (Balken),
+  Zeitachse bündig mit dem Erlös-Diagramm; der Tooltip nennt den Stand in % und kWh.
 - „Marktwert“ der Einspeisung: der einspeisegewichtete Ø-Börsenpreis im Vergleich zum zeitlichen Ø.
 - Hinweis auf negative Preise: Anzahl der Viertelstunden, wie viele davon mit Einspeisung, kWh und Anteil.
 - Angabe, welche Preisauflösung verwendet wurde (siehe unten).
 - Erlös-Säulendiagramm mit Drill-down: Monate → Klick → Tage des Monats → Klick → Tagesverlauf aller Tarife
   je Viertelstunde oder Stunde (mit Tageseinspeisung, Tag vor/zurück blättern). In der Tagesansicht und im
   Tagesverlauf zusätzlich der Börsenpreis als Linie (Tagesansicht: zeitlicher Ø des Tages).
+  Legenden-Einträge sind klickbar und blenden die Reihe aus bzw. ein; die Auswahl bleibt beim Blättern erhalten.
 - Paarvergleich zweier anklickbarer Tarife: Mehrerlös, Differenz je kWh, gewonnene Tage/Monate, Profilfaktor.
 - Monatsbilanz des Paars: Differenz der Monatserlöse.
 

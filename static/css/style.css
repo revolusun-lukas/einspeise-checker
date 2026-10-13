@@ -827,6 +827,25 @@ input[type="number"]::-webkit-outer-spin-button {
   gap: 6px;
 }
 
+/* Klickbarer Legenden-Eintrag (Reihe ein-/ausblenden). */
+.legend-toggle {
+  border: none;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.legend-toggle:hover {
+  color: var(--text-primary);
+}
+
+.legend-toggle.is-off {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
 .legend-swatch {
   width: 10px;
   height: 10px;
@@ -854,7 +873,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 .chart-canvas-wrap.fit-chart.soc-chart {
-  height: 170px;
+  height: 220px;
 }
 
 /* .field-hint setzt display und würde sonst das hidden-Attribut überstimmen. */
