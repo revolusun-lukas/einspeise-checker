@@ -225,7 +225,7 @@
     <div id="missing-price-note" class="warnings" hidden></div>
     <div id="price-source-note" class="source-note"></div>
 
-    <p class="hint"><strong>Zwei Tarife anklicken</strong>, um sie im Paar- und Tagesvergleich unten gegenüberzustellen.</p>
+    <p class="hint"><strong>Zwei Tarife anklicken</strong>, um sie im Paarvergleich und in der Monatsbilanz unten gegenüberzustellen.</p>
     <div class="stat-grid" id="stat-grid-tariffs"></div>
 
     <div class="stat-grid">
@@ -275,10 +275,8 @@
       </div>
       <p class="hint" id="chart-day-summary" hidden></p>
       <div class="chart-legend" id="legend-daily"></div>
-      <div class="chart-scroll">
-        <div class="chart-canvas-wrap" id="chart-daily-wrap">
-          <canvas id="chart-daily"></canvas>
-        </div>
+      <div class="chart-canvas-wrap fit-chart" id="chart-daily-wrap">
+        <canvas id="chart-daily"></canvas>
       </div>
     </div>
 
@@ -287,23 +285,6 @@
       <div class="pair-banner" id="pair-title"></div>
       <p class="hint pair-banner-hint">Anderes Paar? Oben einfach eine andere Tarifkachel anklicken.</p>
       <div class="stat-grid" id="pair-kpis"></div>
-    </div>
-
-    <div class="result-block">
-      <h3>Tagesvergleich</h3>
-      <div class="pair-banner" id="day-compare-pair"></div>
-      <div class="day-compare">
-        <div class="day-compare-item">
-          <h4 id="day-a-heading"></h4>
-          <p class="day-title" id="day-a-title"></p>
-          <button type="button" class="btn btn-secondary" id="btn-day-a-detail">Viertelstunden-Analyse</button>
-        </div>
-        <div class="day-compare-item">
-          <h4 id="day-b-heading"></h4>
-          <p class="day-title" id="day-b-title"></p>
-          <button type="button" class="btn btn-secondary" id="btn-day-b-detail">Viertelstunden-Analyse</button>
-        </div>
-      </div>
     </div>
 
     <div class="result-block">
@@ -317,29 +298,6 @@
     <button id="btn-restart" class="btn btn-secondary">Neuen Import starten</button>
   </section>
 
-  <section id="modal-day-detail" class="card" tabindex="-1" hidden>
-    <button type="button" class="btn-back" data-back-to="modal-results">&larr; Zurück zum Ergebnis</button>
-    <h2>Viertelstunden-Analyse</h2>
-    <p class="day-detail-summary" id="day-detail-title"></p>
-    <div class="stat-grid" id="day-detail-kpis"></div>
-
-    <h4 class="pair-subhead">Bilanz je Viertelstunde</h4>
-    <p class="hint">Erlösdifferenz je Viertelstunde an diesem Tag (inkl. Gebühren-Anteil); die Farbe zeigt, welcher Tarif mehr erlöst hat.</p>
-    <div class="chart-legend" id="legend-day-advantage"></div>
-    <div class="chart-canvas-wrap pair-chart"><canvas id="chart-day-advantage"></canvas></div>
-
-    <h4 class="pair-subhead">Vergütung je Viertelstunde an diesem Tag</h4>
-    <p class="hint">Ohne Grundgebühr — tatsächliche Werte dieses Tages, kein Durchschnitt.</p>
-    <div class="chart-legend" id="legend-day-prices"></div>
-    <div class="chart-canvas-wrap pair-chart"><canvas id="chart-day-prices"></canvas></div>
-
-    <h4 class="pair-subhead">Einspeisung je Viertelstunde an diesem Tag</h4>
-    <div class="chart-canvas-wrap pair-chart"><canvas id="chart-day-feed-in"></canvas></div>
-
-    <h4 class="pair-subhead">Viertelstundenwerte</h4>
-    <div class="table-scroll"><table id="table-day-detail" class="detail-table"></table></div>
-    <p class="hint" id="day-detail-note"></p>
-  </section>
 </div>
 
 <script src="/static/vendor/chart.umd.min.js"></script>

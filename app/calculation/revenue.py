@@ -185,10 +185,13 @@ def calculate_revenue(feed_in_kwh: pd.Series, prices_eur_mwh: pd.Series, tariffs
     # Tageswerte inkl. Grundgebühr-Anteil -- summieren sich exakt zum Gesamterlös.
     daily = pd.DataFrame(revenue).groupby(local_index.date).sum().sort_index()
     daily_kwh = kwh.groupby(local_index.date).sum()
+    # Zeitlicher Ø-Börsenpreis je Tag (nur Viertelstunden mit Preis) für die Tagesansicht im Erlös-Chart.
+    daily_spot = spot_ct.groupby(local_index.date).mean()
     daily_out = [
         {
             "date": day.isoformat(),
             "feed_in_kwh": round(float(daily_kwh.get(day, 0.0)), 3),
+            "spot_avg_ct_kwh": _round_or_none(daily_spot.get(day), 3),
             "revenues": {n: round(float(row[n]), 4) for n in names},
         }
         for day, row in daily.iterrows()

@@ -57,7 +57,6 @@ function renderLegend(elementId, names) {
     .join('');
 }
 
-const CHART_HEIGHT_PX = 320;
 
 /* ---------- Vergleichs-Charts für zwei ausgewählte Tarife ----------
    pair: [{name, colorIndex}] -- Farben folgen dem Tarif (Index in der Tarifliste), nicht der
@@ -125,74 +124,6 @@ function renderAdvantageChart(canvasId, legendId, labels, diffs, pair, xScale = 
   });
 }
 
-// Vergütungslinien je Viertelstunde. ratesByName: {name: [ct/kWh | null, ...]}.
-function renderRateLinesChart(canvasId, legendId, labels, ratesByName, pair, yTitle) {
-  renderPairLegend(legendId, pair);
-  recreatePairChart(canvasId, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: pair.map((p) => ({
-        label: p.name,
-        data: ratesByName[p.name],
-        borderColor: seriesColor(p.colorIndex),
-        backgroundColor: seriesColor(p.colorIndex),
-        borderWidth: 2,
-        pointRadius: 0,
-        pointHoverRadius: 5,
-        tension: 0.2,
-        spanGaps: false,
-      })),
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => (ctx.parsed.y === null ? `${ctx.dataset.label}: kein Preis` : `${ctx.dataset.label}: ${formatDe(ctx.parsed.y, 2)} ct/kWh`),
-          },
-        },
-      },
-      scales: {
-        x: quarterHourScale(),
-        y: { ...commonScaleOptions(), title: { display: true, text: yTitle, color: cssVar('--text-secondary') } },
-      },
-    },
-  });
-}
-
-// Einzelne Einspeise-Reihe (neutrale Farbe, keine Legende nötig -- die Überschrift benennt sie).
-function renderFeedInChart(canvasId, labels, values, yTitle, tooltipLabel) {
-  recreatePairChart(canvasId, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        data: values,
-        backgroundColor: cssVar('--text-muted'),
-        borderRadius: 2,
-        categoryPercentage: 0.9,
-        barPercentage: 0.9,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => tooltipLabel(ctx.dataIndex, ctx.parsed.y) } },
-      },
-      scales: {
-        x: quarterHourScale(),
-        y: { ...commonScaleOptions(), beginAtZero: true, title: { display: true, text: yTitle, color: cssVar('--text-secondary') } },
-      },
-    },
-  });
-}
-
 /* Monatsbilanz des gewählten Tarifpaars. */
 
 function renderPairMonthsChart(months, pair) {
@@ -203,30 +134,6 @@ function renderPairMonthsChart(months, pair) {
     months.map((m) => formatMonthLabel(m.date)),
     months.map((m) => m.revenues[a.name] - m.revenues[b.name]),
     pair,
-  );
-}
-
-/* Viertelstunden-Analyse: dieselben Charts für einen einzelnen Tag (Antwort von /api/day-detail). */
-
-function renderDayCharts(detail, pair) {
-  const [a, b] = pair;
-  const labels = detail.slots.map((s) => s.time);
-  renderAdvantageChart(
-    'chart-day-advantage',
-    'legend-day-advantage',
-    labels,
-    detail.slots.map((s) => s.revenue_eur[a.name] - s.revenue_eur[b.name]),
-    pair,
-    quarterHourScale(),
-  );
-  const rates = Object.fromEntries(pair.map((p) => [p.name, detail.slots.map((s) => s.rates_ct_kwh[p.name])]));
-  renderRateLinesChart('chart-day-prices', 'legend-day-prices', labels, rates, pair, 'ct/kWh');
-  renderFeedInChart(
-    'chart-day-feed-in',
-    labels,
-    detail.slots.map((s) => s.feed_in_kwh),
-    'kWh',
-    (i, v) => `${formatDe(v, 3)} kWh`,
   );
 }
 
@@ -243,17 +150,51 @@ function formatDayLabel(dateStr) {
 /* items: [{date, revenues: {tarifname: betrag}}] für 'month'/'day', [{label, feed_in_kwh, revenues}] für
    den Tagesverlauf ('quarter'/'hour'). granularity steuert Label-Format, Balkenbreite und Achsentitel.
    onBarClick(index) macht die Balken anklickbar (Drill-down Monat -> Tag -> Tagesverlauf).
-   Erzeugt bei jedem Aufruf einen komplett neuen Chart (destroy + recreate), damit Breite/Höhe immer
-   zur aktuellen Datenmenge passen. */
+   spotValues (ct/kWh je Kategorie, null = kein Preis) blendet den Börsenpreis als Linie auf einer
+   eigenen rechten Achse ein.
+   Der Chart füllt die verfügbare Breite (CSS .fit-chart) -- bei vielen Kategorien werden die Balken
+   schmaler, es gibt keinen horizontalen Scrollbalken. Jeder Aufruf erzeugt einen neuen Chart
+   (destroy + recreate), weil sich Achsen und Datensätze je Ansicht ändern. */
 const DAILY_CHART_GRANULARITY = {
-  month: { axisTitle: '€ / Monat', perCategory: (n) => Math.max(70, n * 26), maxBar: 32 },
-  day: { axisTitle: '€ / Tag', perCategory: (n) => Math.max(18, n * 8), maxBar: 16 },
-  hour: { axisTitle: '€ / Stunde', perCategory: (n) => Math.max(30, n * 10), maxBar: 16 },
-  quarter: { axisTitle: '€ / Viertelstunde', perCategory: (n) => Math.max(10, n * 5), maxBar: 8 },
+  month: { axisTitle: '€ / Monat', maxBar: 32 },
+  day: { axisTitle: '€ / Tag', maxBar: 16 },
+  hour: { axisTitle: '€ / Stunde', maxBar: 16 },
+  quarter: { axisTitle: '€ / Viertelstunde', maxBar: 8 },
 };
 
-function renderDailyChart(items, tariffNames, granularity, onBarClick = null) {
+/* Wertebereiche zweier Achsen so erweitern, dass ihre Nulllinien auf derselben Höhe liegen --
+   sonst wirkt die Börsenpreis-Linie negativ, wo sie nur unter der Null der Erlös-Achse liegt.
+   Liefert je Achse {min, max}. */
+function alignedZeroRanges(valuesA, valuesB) {
+  const bounds = (values) => {
+    const finite = values.filter((v) => v !== null && Number.isFinite(v));
+    let lo = Math.min(0, ...finite);
+    let hi = Math.max(0, ...finite);
+    if (hi === lo) hi = lo + 1;
+    // Nur negative Werte: etwas Platz über der Null, damit die andere Achse ihre positiven Werte zeigen kann.
+    if (hi === 0) hi = -lo * 0.05;
+    return { lo, hi };
+  };
+  const a = bounds(valuesA);
+  const b = bounds(valuesB);
+  // Anteil der Achsenhöhe unterhalb der Null -- der größere gilt für beide.
+  const f = Math.max(-a.lo / (a.hi - a.lo), -b.lo / (b.hi - b.lo));
+  const stretch = ({ lo, hi }) => {
+    if (f === 0) return { min: 0, max: hi };
+    const loNeeded = (-f * hi) / (1 - f);
+    return loNeeded <= lo ? { min: loNeeded, max: hi } : { min: lo, max: (-lo * (1 - f)) / f };
+  };
+  return [stretch(a), stretch(b)];
+}
+
+function renderDailyChart(items, tariffNames, granularity, onBarClick = null, spotValues = null) {
   renderLegend('legend-daily', tariffNames);
+  if (spotValues) {
+    document.getElementById('legend-daily').insertAdjacentHTML(
+      'beforeend',
+      `<span class="legend-item"><span class="legend-line" style="background:${cssVar('--text-primary')}"></span>Börsenpreis (ct/kWh, rechte Achse)</span>`,
+    );
+  }
 
   if (dailyChartInstance) {
     dailyChartInstance.destroy();
@@ -267,13 +208,6 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null) {
     return granularity === 'day' ? formatDayLabel(it.date) : formatMonthLabel(it.date);
   });
 
-  // Größe auf dem Wrapper-Div, Chart.js per responsive:true/maintainAspectRatio:false darauf
-  // angesetzt -- so bleibt der Graph inkl. devicePixelRatio scharf.
-  const width = Math.max(480, items.length * cfg.perCategory(tariffNames.length));
-  const wrap = document.getElementById('chart-daily-wrap');
-  wrap.style.width = width + 'px';
-  wrap.style.height = CHART_HEIGHT_PX + 'px';
-
   const ctx = document.getElementById('chart-daily').getContext('2d');
 
   const datasets = tariffNames.map((name, i) => ({
@@ -284,10 +218,39 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null) {
     maxBarThickness: cfg.maxBar,
     categoryPercentage: 0.8,
     barPercentage: 0.9,
+    order: 1,
   }));
+  if (spotValues) {
+    // order 0 = über den Balken gezeichnet.
+    datasets.push({
+      type: 'line',
+      label: 'Börsenpreis',
+      data: spotValues,
+      yAxisID: 'ySpot',
+      borderColor: cssVar('--text-primary'),
+      backgroundColor: cssVar('--text-primary'),
+      borderWidth: 1.5,
+      pointRadius: granularity === 'quarter' ? 0 : 2,
+      pointHoverRadius: 4,
+      tension: 0,
+      spanGaps: false,
+      order: 0,
+    });
+  }
 
-  let xScale = { ...commonScaleOptions(), ticks: { ...commonScaleOptions().ticks, maxTicksLimit: granularity === 'day' ? 20 : undefined } };
+  // Waagerechte Beschriftung; bei wenig Platz blendet Chart.js einzelne Labels aus (autoSkip).
+  let xScale = { ...commonScaleOptions(), ticks: { ...commonScaleOptions().ticks, maxRotation: 0, maxTicksLimit: granularity === 'day' ? 20 : undefined } };
   if (granularity === 'quarter') xScale = quarterHourScale();
+
+  // Mit Börsenpreis: feste Achsengrenzen mit gemeinsamer Nulllinie. Die Grenzen sind dann keine
+  // runden Werte, daher die Achsenbeschriftung auf 2 Nachkommastellen begrenzen.
+  let revenueRange = {};
+  let spotRange = {};
+  if (spotValues) {
+    const revenues = tariffNames.flatMap((name) => items.map((it) => it.revenues[name]));
+    [revenueRange, spotRange] = alignedZeroRanges(revenues, spotValues);
+  }
+  const tickLabel = (value) => value.toLocaleString('de-DE', { maximumFractionDigits: 2 });
 
   dailyChartInstance = new Chart(ctx, {
     type: 'bar',
@@ -295,6 +258,8 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      // Ganze Spalte im Tooltip (alle Tarife + Börsenpreis) und als Klickfläche.
+      interaction: { mode: 'index', intersect: false },
       onClick: onBarClick
         ? (event, elements) => { if (elements.length) onBarClick(elements[0].index); }
         : undefined,
@@ -305,7 +270,12 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (c) => `${c.dataset.label}: ${formatEurShort(c.parsed.y)}`,
+            label: (c) => {
+              if (c.dataset.yAxisID === 'ySpot') {
+                return c.parsed.y === null ? 'Börsenpreis: kein Preis' : `Börsenpreis: ${formatDe(c.parsed.y, 2)} ct/kWh${granularity === 'day' ? ' (Ø des Tages)' : ''}`;
+              }
+              return `${c.dataset.label}: ${formatEurShort(c.parsed.y)}`;
+            },
             footer: (ctxs) => {
               if (!ctxs.length) return '';
               const item = items[ctxs[0].dataIndex];
@@ -320,8 +290,20 @@ function renderDailyChart(items, tariffNames, granularity, onBarClick = null) {
         y: {
           ...commonScaleOptions(),
           beginAtZero: true,
+          ...revenueRange,
+          ticks: { ...commonScaleOptions().ticks, callback: tickLabel },
           title: { display: true, text: cfg.axisTitle, color: cssVar('--text-secondary') },
         },
+        ...(spotValues ? {
+          ySpot: {
+            ...commonScaleOptions(),
+            ...spotRange,
+            ticks: { ...commonScaleOptions().ticks, callback: tickLabel },
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'Börsenpreis ct/kWh', color: cssVar('--text-secondary') },
+          },
+        } : {}),
       },
     },
   });
