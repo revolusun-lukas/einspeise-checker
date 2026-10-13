@@ -73,6 +73,8 @@ class EegTariffInput(BaseModel):
     verguetung_ct_kwh: float = Field(ge=0, le=100)
     # Gesetzliche Regel für neuere Anlagen: keine Vergütung in Viertelstunden mit negativem Börsenpreis.
     keine_verguetung_bei_negativen_preisen: bool = False
+    # Fiktiver Speicher (kWh), 0 = ohne. Lohnt nur mit obiger Regel -- sonst ist der Satz immer gleich.
+    speicher_kwh: float = Field(ge=0, le=100, default=0)
 
 
 class DirectMarketingTariffInput(BaseModel):
@@ -84,6 +86,8 @@ class DirectMarketingTariffInput(BaseModel):
     einmalkosten_eur: float = Field(ge=0, le=10000, default=0)
     # Anlage speist nicht ein, wenn Börsenpreis − Abschlag < 0.
     abschalten_bei_negativer_verguetung: bool = False
+    # Fiktiver Speicher (kWh), 0 = ohne. Verschiebt Einspeisung in Viertelstunden mit höherem Börsenpreis.
+    speicher_kwh: float = Field(ge=0, le=100, default=0)
 
 
 TariffInput = Annotated[Union[EegTariffInput, DirectMarketingTariffInput], Field(discriminator="type")]
@@ -104,6 +108,11 @@ class TariffTotal(BaseModel):
     lost_negative_eur: float
     curtailed_kwh: float  # durch Abschalten nicht eingespeist
     avoided_negative_eur: float  # dadurch vermiedene Kosten
+    storage_kwh: float  # Kapazität des fiktiven Speichers, 0 = ohne
+    storage_gain_eur: float  # Mehrerlös durch den Speicher ggü. demselben Tarif ohne Speicher
+    storage_charged_kwh: float
+    storage_discharged_kwh: float
+    storage_cycles: float  # Vollzyklen = ausgespeichert ÷ Kapazität
     feed_in_kwh: float
     avg_ct_kwh: float
     energy_avg_ct_kwh: float
@@ -165,6 +174,7 @@ class DaySlotDetail(BaseModel):
     utc_offset_hours: float
     feed_in_kwh: float  # gemessen
     curtailed: dict[str, bool]  # Tarif hat in dieser Viertelstunde abgeschaltet
+    soc_kwh: dict[str, Optional[float]]  # Füllstand des fiktiven Speichers, None = kein Speicher
     spot_ct_kwh: Optional[float]  # None = kein Börsenpreis
     rates_ct_kwh: dict[str, Optional[float]]
     net_rates_ct_kwh: dict[str, Optional[float]]

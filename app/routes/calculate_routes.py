@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from app.calculation.revenue import calculate_revenue, day_detail, pair_analysis
+from app.calculation.storage import StorageError
 from app.pricing.prices import (
     SOURCE_AWATTAR_HOUR,
     SOURCE_SMARD_HOUR,
@@ -44,10 +46,14 @@ async def calculate(request: Request, req: CalculateRequest) -> CalculateRespons
             raise HTTPException(502, str(exc)) from exc
     price_data = session.price_data
 
+    # Die Speicher-Optimierung rechnet je Tarif einige Sekunden -- im Threadpool, damit der Server
+    # in der Zeit andere Anfragen (z.B. Health-Check) beantwortet.
     try:
-        result, detail = calculate_revenue(feed_in, price_data.eur_mwh, req.tariffs)
+        result, detail = await run_in_threadpool(calculate_revenue, feed_in, price_data.eur_mwh, req.tariffs)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except StorageError as exc:
+        raise HTTPException(500, str(exc)) from exc
 
     source_counts = price_data.source.value_counts()
     result["price_resolution"] = {

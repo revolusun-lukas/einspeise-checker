@@ -853,6 +853,10 @@ input[type="number"]::-webkit-outer-spin-button {
   height: 320px;
 }
 
+.chart-canvas-wrap.fit-chart.soc-chart {
+  height: 170px;
+}
+
 /* .field-hint setzt display und würde sonst das hidden-Attribut überstimmen. */
 .field-hint[hidden] {
   display: none;
